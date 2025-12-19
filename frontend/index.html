@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Melbourne Community Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="top-banner">
+      <div class="top-banner-main">
+        <span class="top-banner-emergency">Emergency?</span>
+        <span>Call <strong>000</strong> for immediate assistance</span>
+      </div>
+      <div class="top-banner-subtitle">Stay Safe</div>
+      <div class="top-banner-description">
+        See it, post it, sort it
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <section class="app-toolbar">
+        <div class="toolbar-left">
+          <div class="app-logo">Community Map – Melbourne CBD</div>
+          <div class="view-toggle" role="tablist">
+            <button
+              id="tab-map"
+              class="toggle-button active"
+              data-target="view-map"
+              type="button"
+            >
+              Map
+            </button>
+            <button
+              id="tab-list"
+              class="toggle-button"
+              data-target="view-list"
+              type="button"
+            >
+              List
+            </button>
+          </div>
+        </div>
+        <div class="toolbar-right">
+          <button id="filters-button" class="ghost-button" type="button">
+            Filters
+          </button>
+          <button id="report-button" class="primary-button" type="button">
+            Report Incident
+          </button>
+          <button id="admin-button" class="ghost-button" type="button">
+            Admin Login
+          </button>
+        </div>
+      </section>
+
+      <section id="alert-banner" class="alert-banner hidden"></section>
+
+      <section id="view-map" class="view-container active">
+        <div id="map"></div>
+      </section>
+
+      <section id="view-list" class="view-container">
+        <div class="list-filters">
+          <div class="filter-group">
+            <label for="list-time-filter">Time</label>
+            <select id="list-time-filter">
+              <option value="">Last 6 hours (All)</option>
+              <option value="2">Last 2 hours</option>
+              <option value="4">Last 4 hours</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="list-category-filter">Category</label>
+            <select id="list-category-filter">
+              <option value="">All</option>
+              <option value="protest">⚠️ Protest / Rally</option>
+              <option value="theft">💰 Theft / Robbery</option>
+              <option value="harassment">🚨 Harassment / Assault</option>
+              <option value="antisocial">😡 Anti-social Behaviour</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="list-urgency-filter">Urgency</label>
+            <select id="list-urgency-filter">
+              <option value="">All</option>
+              <option value="high">High only</option>
+              <option value="medium-high">Medium + High</option>
+            </select>
+          </div>
+        </div>
+        <div id="incident-list" class="incident-list"></div>
+      </section>
+    </main>
+
+    <!-- Report Modal -->
+    <div id="report-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <header class="modal-header">
+          <h2>Report Incident</h2>
+          <button id="report-close" class="icon-button" type="button">
+            ✕
+          </button>
+        </header>
+        <div class="modal-body">
+          <section class="form-section">
+            <h3>Location</h3>
+            <p class="form-help">
+              Use your GPS, search for a street, or drag the pin on the small
+              map to the exact spot.
+            </p>
+            <div class="location-controls">
+              <button id="use-location" class="ghost-button" type="button">
+                Use my current location
+              </button>
+              <div class="field">
+                <label for="address-input">Search by street or address</label>
+                <input
+                  id="address-input"
+                  type="text"
+                  placeholder="e.g. Swanston St & Lonsdale St"
+                />
+                <button
+                  id="address-search-button"
+                  class="secondary-button"
+                  type="button"
+                >
+                  Find
+                </button>
+              </div>
+            </div>
+            <div id="location-map" class="location-map"></div>
+          </section>
+
+          <section class="form-section">
+            <h3>Incident details</h3>
+            <div class="field">
+              <label>Category</label>
+              <div class="chip-row" id="category-chips">
+                <button
+                  type="button"
+                  class="chip"
+                  data-value="protest"
+                  data-label="⚠️ Protest / Rally"
+                >
+                  ⚠️ Protest / Rally
+                </button>
+                <button
+                  type="button"
+                  class="chip"
+                  data-value="theft"
+                  data-label="💰 Theft / Robbery"
+                >
+                  💰 Theft / Robbery
+                </button>
+                <button
+                  type="button"
+                  class="chip"
+                  data-value="harassment"
+                  data-label="🚨 Harassment / Assault / Threats"
+                >
+                  🚨 Harassment / Assault / Threats
+                </button>
+                <button
+                  type="button"
+                  class="chip"
+                  data-value="antisocial"
+                  data-label="😡 Anti-social Behaviour"
+                >
+                  😡 Anti-social Behaviour
+                </button>
+                <button
+                  type="button"
+                  class="chip"
+                  data-value="other"
+                  data-label="Other"
+                >
+                  Other
+                </button>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Urgency</label>
+              <div class="chip-row" id="urgency-chips">
+                <button type="button" class="chip" data-value="low">
+                  Low
+                </button>
+                <button type="button" class="chip" data-value="medium">
+                  Medium
+                </button>
+                <button type="button" class="chip" data-value="high">
+                  High
+                </button>
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="description-input">Brief description</label>
+              <textarea
+                id="description-input"
+                rows="3"
+                maxlength="500"
+                placeholder="What happened? Include any useful context (time, direction, group size, etc.)."
+              ></textarea>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <h3>Identity & credibility</h3>
+            <p class="form-help">
+              Sharing contact details helps admins verify your report. They will
+              never be shown publicly.
+            </p>
+            <div class="field">
+              <label>How should we treat this report?</label>
+              <div class="radio-row">
+                <label class="radio-option">
+                  <input
+                    type="radio"
+                    name="identity-mode"
+                    value="verified"
+                    checked
+                  />
+                  <span>Verified – contact visible only to admins</span>
+                </label>
+                <label class="radio-option">
+                  <input type="radio" name="identity-mode" value="anonymous" />
+                  <span>Anonymous – marked as unverified</span>
+                </label>
+              </div>
+            </div>
+            <div id="contact-fields" class="contact-fields">
+              <div class="field">
+                <label for="contact-email">Email (optional)</label>
+                <input
+                  id="contact-email"
+                  type="email"
+                  placeholder="you@example.com"
+                />
+              </div>
+              <div class="field">
+                <label for="contact-phone">Phone (optional)</label>
+                <input
+                  id="contact-phone"
+                  type="tel"
+                  placeholder="+61 ..."
+                />
+              </div>
+            </div>
+            <div class="field checkbox-field">
+              <label>
+                <input type="checkbox" id="agreement-checkbox" />
+                <span>
+                  I understand this app does not replace calling 000 in an
+                  emergency and that I use it at my own risk, except where harm
+                  is caused by a fault in the app. Any contact I share is
+                  visible only to admins.
+                </span>
+              </label>
+            </div>
+          </section>
+        </div>
+        <footer class="modal-footer">
+          <button id="submit-report" class="primary-button" type="button">
+            Submit report
+          </button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- Admin Modal -->
+    <div id="admin-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <header class="modal-header">
+          <h2>Admin Dashboard</h2>
+          <button id="admin-close" class="icon-button" type="button">✕</button>
+        </header>
+        <div class="modal-body" id="admin-body">
+          <form id="admin-login-form" class="admin-login-form">
+            <div class="field">
+              <label for="admin-account">Admin account</label>
+              <input id="admin-account" type="text" required />
+            </div>
+            <div class="field">
+              <label for="admin-pin">PIN</label>
+              <input id="admin-pin" type="password" inputmode="numeric" required />
+            </div>
+            <button class="primary-button" type="submit">Enter dashboard</button>
+            <div id="admin-login-error" class="error-text"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div id="detail-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <header class="modal-header">
+          <h2 id="detail-title"></h2>
+          <button id="detail-close" class="icon-button" type="button">✕</button>
+        </header>
+        <div class="modal-body" id="detail-body"></div>
+      </div>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="./app.js"></script>
+  </body>
+  </html>
+
+
