@@ -20,20 +20,32 @@
   </head>
   <body>
     <header class="top-banner">
-      <div class="top-banner-main">
-        <span class="top-banner-emergency">Emergency?</span>
-        <span>Call <strong>000</strong> for immediate assistance</span>
-      </div>
-      <div class="top-banner-subtitle">Stay Safe</div>
-      <div class="top-banner-description">
-        See it, post it, sort it
+      <div class="top-banner-content">
+        <span class="emergency-icon">🚨</span>
+        <span class="top-banner-text">
+          <strong>Emergency?</strong> Call <strong>000</strong> for immediate assistance
+        </span>
       </div>
     </header>
 
     <main class="app-shell">
-      <section class="app-toolbar">
-        <div class="toolbar-left">
-          <div class="app-logo">Community Map – Melbourne CBD</div>
+      <section class="app-header">
+        <div class="header-left">
+          <div class="app-logo-box">
+            <div class="logo-icon">M</div>
+          </div>
+          <div class="header-text">
+            <h1 class="app-title">Community Map</h1>
+            <p class="app-subtitle">see it, post it, sort it</p>
+          </div>
+        </div>
+        <div class="header-right">
+          <a href="#" id="admin-button" class="admin-link">Admin</a>
+        </div>
+      </section>
+
+      <section class="app-navigation">
+        <div class="nav-left">
           <div class="view-toggle" role="tablist">
             <button
               id="tab-map"
@@ -41,7 +53,7 @@
               data-target="view-map"
               type="button"
             >
-              Map
+              Map View
             </button>
             <button
               id="tab-list"
@@ -49,20 +61,36 @@
               data-target="view-list"
               type="button"
             >
-              List
+              List View
             </button>
           </div>
+          <div class="filter-dropdown-wrapper">
+            <select id="quick-filter" class="filter-dropdown">
+              <option value="">All Reports</option>
+              <option value="high">High Urgency Only</option>
+              <option value="2">Last 2 Hours</option>
+              <option value="4">Last 4 Hours</option>
+            </select>
+          </div>
         </div>
-        <div class="toolbar-right">
-          <button id="filters-button" class="ghost-button" type="button">
-            Filters
-          </button>
-          <button id="report-button" class="primary-button" type="button">
+        <div class="nav-right">
+          <button id="report-button" class="report-button" type="button">
+            <span class="plus-icon">+</span>
             Report Incident
           </button>
-          <button id="admin-button" class="ghost-button" type="button">
-            Admin Login
-          </button>
+        </div>
+      </section>
+
+      <section class="live-updates-banner">
+        <div class="updates-left">
+          <span class="updates-icon">📢</span>
+          <span class="updates-text">
+            <strong>Live Updates:</strong> Reports are automatically cleared after 6 hours. Notifications enabled for urgent incidents within 500m.
+          </span>
+        </div>
+        <div id="active-users-badge" class="active-users-badge">
+          <span class="users-icon">👥</span>
+          <span id="active-users-text" class="active-users-text">0 people active nearby</span>
         </div>
       </section>
 
@@ -286,12 +314,8 @@
     <!-- Admin Modal -->
     <div id="admin-modal" class="modal hidden" aria-hidden="true">
       <div class="modal-backdrop"></div>
-      <div class="modal-content">
-        <header class="modal-header">
-          <h2>Admin Dashboard</h2>
-          <button id="admin-close" class="icon-button" type="button">✕</button>
-        </header>
-        <div class="modal-body" id="admin-body">
+      <div class="modal-content admin-modal-content">
+        <div id="admin-body" class="admin-body-container">
           <form id="admin-login-form" class="admin-login-form">
             <div class="field">
               <label for="admin-account">Admin account</label>
@@ -303,6 +327,44 @@
             </div>
             <button class="primary-button" type="submit">Enter dashboard</button>
             <div id="admin-login-error" class="error-text"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Incident Modal -->
+    <div id="edit-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <header class="modal-header">
+          <h2>Edit Incident</h2>
+          <button id="edit-close" class="icon-button" type="button">✕</button>
+        </header>
+        <div class="modal-body" id="edit-body">
+          <form id="edit-form">
+            <div class="field">
+              <label>Category</label>
+              <div class="chip-row" id="edit-category-chips">
+                <button type="button" class="chip" data-value="protest">⚠️ Protest / Rally</button>
+                <button type="button" class="chip" data-value="theft">💰 Theft / Robbery</button>
+                <button type="button" class="chip" data-value="harassment">🚨 Harassment / Assault</button>
+                <button type="button" class="chip" data-value="antisocial">😡 Anti-social Behaviour</button>
+                <button type="button" class="chip" data-value="other">Other</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>Urgency</label>
+              <div class="chip-row" id="edit-urgency-chips">
+                <button type="button" class="chip" data-value="low">Low</button>
+                <button type="button" class="chip" data-value="medium">Medium</button>
+                <button type="button" class="chip" data-value="high">High</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="edit-description">Description</label>
+              <textarea id="edit-description" rows="3" maxlength="500"></textarea>
+            </div>
+            <button class="primary-button" type="submit">Save Changes</button>
           </form>
         </div>
       </div>

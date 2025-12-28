@@ -1,5 +1,8 @@
 // Basic configuration
-const API_BASE = "http://localhost:8000/api";
+// Use deployed API in production, localhost for development
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+  ? "http://localhost:8000/api" 
+  : "https://community-map.onrender.com/api";
 
 // Melbourne CBD approximate centre
 const MELBOURNE_CBD = {
@@ -19,6 +22,30 @@ let lastAlertedIncidentIds = new Set();
 let userLocation = null;
 let adminLoginTemplate = "";
 let isAdminLoggedIn = false;
+let locationDescriptionCache = new Map(); // Cache for location descriptions
+let userReactions = new Map(); // Track user reactions per incident (loaded from localStorage)
+let mapFilterState = { hours: null, urgency: null }; // Track map filter state
+
+// Load user reactions from localStorage on page load
+function loadUserReactions() {
+  try {
+    const stored = localStorage.getItem('userReactions');
+    if (stored) {
+      userReactions = new Map(JSON.parse(stored));
+    }
+  } catch (e) {
+    console.error('Failed to load user reactions:', e);
+  }
+}
+
+// Save user reactions to localStorage
+function saveUserReactions() {
+  try {
+    localStorage.setItem('userReactions', JSON.stringify([...userReactions]));
+  } catch (e) {
+    console.error('Failed to save user reactions:', e);
+  }
+}
 
 const categoryMeta = {
   protest: { emoji: "⚠️", label: "Protest / Rally" },
@@ -97,12 +124,38 @@ async function fetchIncidents(hoursFilter) {
   renderMapMarkers();
   renderList();
   checkNearbyAlerts();
+  updateActiveUsersCount();
+}
+
+function getFilteredIncidentsForMap() {
+  // Filter incidents based on current map filter state
+  return incidents.filter((inc) => {
+    const now = new Date();
+    const ts = new Date(inc.timestamp);
+    
+    // Apply time filter
+    if (mapFilterState.hours != null) {
+      const cutoff = new Date(now.getTime() - mapFilterState.hours * 60 * 60 * 1000);
+      if (ts < cutoff) return false;
+    }
+    
+    // Apply urgency filter
+    if (mapFilterState.urgency === "high" && inc.urgency !== "high") {
+      return false;
+    }
+    
+    return true;
+  });
 }
 
 function renderMapMarkers() {
   if (!mainMarkersLayer) return;
   mainMarkersLayer.clearLayers();
-  incidents.forEach((incident) => {
+  
+  // Use filtered incidents for map
+  const filteredIncidents = getFilteredIncidentsForMap();
+  
+  filteredIncidents.forEach((incident) => {
     const marker = createEmojiMarker(
       incident.latitude,
       incident.longitude,
@@ -182,8 +235,20 @@ function renderList() {
 
     const desc = document.createElement("div");
     desc.className = "incident-description";
-    const text = inc.description || "";
-    desc.textContent = text.length > 140 ? `${text.slice(0, 140)}…` : text;
+    // Auto-generate location description based on coordinates
+    desc.setAttribute("data-lat", inc.latitude);
+    desc.setAttribute("data-lng", inc.longitude);
+    desc.setAttribute("data-incident-id", inc.id);
+    desc.textContent = "Loading location...";
+    
+    // Load location description asynchronously
+    reverseGeocode(inc.latitude, inc.longitude).then(locationDesc => {
+      // Update this specific description element
+      const descEl = document.querySelector(`[data-incident-id="${inc.id}"]`);
+      if (descEl) {
+        descEl.textContent = locationDesc;
+      }
+    });
 
     const tags = document.createElement("div");
     tags.className = "incident-tags";
@@ -220,7 +285,31 @@ function renderList() {
     detailsBtn.className = "secondary-button";
     detailsBtn.type = "button";
     detailsBtn.textContent = "View details";
-    detailsBtn.addEventListener("click", () => openDetailModal(inc));
+    detailsBtn.addEventListener("click", () => {
+      // Switch to map view
+      const mapTab = document.getElementById("tab-map");
+      const listTab = document.getElementById("tab-list");
+      const mapView = document.getElementById("view-map");
+      const listView = document.getElementById("view-list");
+      
+      // Activate map view
+      mapTab.classList.add("active");
+      listTab.classList.remove("active");
+      mapView.classList.add("active");
+      listView.classList.remove("active");
+      
+      // Center map on incident location and zoom in
+      if (map) {
+        map.setView([inc.latitude, inc.longitude], 17);
+        // Give map a moment to render, then open detail modal
+        setTimeout(() => {
+          map.invalidateSize();
+          openDetailModal(inc);
+        }, 300);
+      } else {
+        openDetailModal(inc);
+      }
+    });
     actions.appendChild(detailsBtn);
 
     card.appendChild(left);
@@ -230,7 +319,73 @@ function renderList() {
   });
 }
 
-function openDetailModal(incident) {
+async function reactToIncident(incidentId, reaction) {
+  try {
+    const res = await fetch(`${API_BASE}/incidents/${incidentId}/react`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reaction }),
+    });
+    
+    if (!res.ok) {
+      throw new Error("Failed to react to incident");
+    }
+    
+    const data = await res.json();
+    
+    // Store user reaction
+    userReactions.set(incidentId, reaction);
+    saveUserReactions();
+    
+    // Update the incident in the local array
+    const incident = incidents.find(inc => inc.id === incidentId);
+    if (incident) {
+      incident.like_count = data.like_count || incident.like_count || 0;
+      incident.dislike_count = data.dislike_count || incident.dislike_count || 0;
+    }
+    
+    // Update the UI
+    updateReactionButtons(incidentId, data.like_count, data.dislike_count);
+    
+    return data;
+  } catch (e) {
+    console.error("Error reacting to incident:", e);
+    alert("Unable to submit your reaction. Please try again.");
+  }
+}
+
+function updateReactionButtons(incidentId, likeCount, dislikeCount) {
+  const likeBtn = document.getElementById("detail-like-btn");
+  const dislikeBtn = document.getElementById("detail-dislike-btn");
+  const likeCountEl = document.getElementById("detail-like-count");
+  const dislikeCountEl = document.getElementById("detail-dislike-count");
+  
+  if (likeCountEl) likeCountEl.textContent = likeCount || 0;
+  if (dislikeCountEl) dislikeCountEl.textContent = dislikeCount || 0;
+  
+  const userReaction = userReactions.get(incidentId);
+  if (likeBtn) {
+    if (userReaction === "like") {
+      likeBtn.classList.add("active");
+      likeBtn.disabled = true;
+    } else {
+      likeBtn.classList.remove("active");
+      likeBtn.disabled = false;
+    }
+  }
+  
+  if (dislikeBtn) {
+    if (userReaction === "dislike") {
+      dislikeBtn.classList.add("active");
+      dislikeBtn.disabled = true;
+    } else {
+      dislikeBtn.classList.remove("active");
+      dislikeBtn.disabled = false;
+    }
+  }
+}
+
+async function openDetailModal(incident) {
   const meta = categoryMeta[incident.category] || categoryMeta.other;
   const detailTitle = document.getElementById("detail-title");
   const detailBody = document.getElementById("detail-body");
@@ -238,10 +393,28 @@ function openDetailModal(incident) {
 
   const credibility = incident.is_verified ? "Verified" : "Unverified";
   const tsText = humanTimeAgo(incident.timestamp);
+  
+  // Get location description
+  const locationDesc = await reverseGeocode(incident.latitude, incident.longitude);
+  const userDesc = incident.description || "";
+  
+  // Show location description and user description if different
+  let descriptionHTML = `<div class="incident-location"><strong>📍 Location:</strong> ${locationDesc}</div>`;
+  if (userDesc && userDesc.toLowerCase() !== locationDesc.toLowerCase()) {
+    descriptionHTML += `<div class="incident-description" style="margin-top:0.75rem"><strong>📝 Description:</strong> ${userDesc}</div>`;
+  }
+
+  const likeCount = incident.like_count || 0;
+  const dislikeCount = incident.dislike_count || 0;
+  const userReaction = userReactions.get(incident.id);
+  const likeActive = userReaction === "like" ? "active" : "";
+  const dislikeActive = userReaction === "dislike" ? "active" : "";
+  const likeDisabled = userReaction === "like" ? "disabled" : "";
+  const dislikeDisabled = userReaction === "dislike" ? "disabled" : "";
 
   detailBody.innerHTML = `
     <div class="incident-meta">${tsText} • ${credibility}</div>
-    <div class="incident-description">${incident.description || ""}</div>
+    ${descriptionHTML}
     <div class="incident-tags" style="margin-top:0.75rem">
       <span class="tag ${
         incident.urgency === "high"
@@ -259,7 +432,42 @@ function openDetailModal(incident) {
           : ""
       }
     </div>
+    <div class="reaction-section" style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid #e5e7eb;">
+      <div style="font-size:0.875rem; color:#6b7280; margin-bottom:0.75rem;">Did you see this too?</div>
+      <div class="reaction-buttons">
+        <button id="detail-like-btn" class="reaction-btn reaction-like ${likeActive}" ${likeDisabled} type="button">
+          <span class="reaction-icon">👍</span>
+          <span class="reaction-text">I saw that too</span>
+          <span id="detail-like-count" class="reaction-count">${likeCount}</span>
+        </button>
+        <button id="detail-dislike-btn" class="reaction-btn reaction-dislike ${dislikeActive}" ${dislikeDisabled} type="button">
+          <span class="reaction-icon">👎</span>
+          <span class="reaction-text">Dislike</span>
+          <span id="detail-dislike-count" class="reaction-count">${dislikeCount}</span>
+        </button>
+      </div>
+    </div>
   `;
+
+  // Set up event listeners for reaction buttons
+  const likeBtn = document.getElementById("detail-like-btn");
+  const dislikeBtn = document.getElementById("detail-dislike-btn");
+  
+  if (likeBtn) {
+    likeBtn.addEventListener("click", async () => {
+      if (!likeBtn.disabled) {
+        await reactToIncident(incident.id, "like");
+      }
+    });
+  }
+  
+  if (dislikeBtn) {
+    dislikeBtn.addEventListener("click", async () => {
+      if (!dislikeBtn.disabled) {
+        await reactToIncident(incident.id, "dislike");
+      }
+    });
+  }
 
   const modal = document.getElementById("detail-modal");
   modal.classList.remove("hidden");
@@ -404,6 +612,134 @@ async function geocodeAddress() {
   }
 }
 
+// Reverse geocoding: convert coordinates to address description
+async function reverseGeocode(lat, lng) {
+  // Check cache first
+  const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+  if (locationDescriptionCache.has(cacheKey)) {
+    return locationDescriptionCache.get(cacheKey);
+  }
+  
+  try {
+    // Use OpenStreetMap Nominatim reverse geocoding API
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'CommunityMapApp/1.0'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Reverse geocoding failed');
+    }
+    
+    const data = await response.json();
+    let description = `Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    
+    if (data && data.address) {
+      const addr = data.address;
+      
+      // Format: "152-154 Queensberry Street," (house number range + street name)
+      if (addr.road) {
+        let streetAddress = '';
+        
+        // Handle house number - check for number ranges or single numbers
+        if (addr.house_number) {
+          // If there's a range indicator in the house number (e.g., "152-154")
+          if (addr.house_number.includes('-') || addr.house_number.includes('–')) {
+            streetAddress = `${addr.house_number} ${addr.road}`;
+          } else {
+            // Single house number - could try to estimate range or just use single number
+            const houseNum = parseInt(addr.house_number);
+            if (!isNaN(houseNum)) {
+              // If even, show range with next even number; if odd, show range with next odd
+              const nextNum = houseNum + 2;
+              streetAddress = `${houseNum}-${nextNum} ${addr.road}`;
+            } else {
+              streetAddress = `${addr.house_number} ${addr.road}`;
+            }
+          }
+        } else {
+          // No house number - try to extract from display_name or use street name only
+          // Check nearby addresses in display_name
+          if (data.display_name) {
+            const displayParts = data.display_name.split(',');
+            // Look for house number pattern in first part
+            const firstPart = displayParts[0].trim();
+            const houseNumMatch = firstPart.match(/(\d+)(?:\s*[-–]\s*(\d+))?\s+(.+)/);
+            if (houseNumMatch) {
+              if (houseNumMatch[2]) {
+                // Range found
+                streetAddress = `${houseNumMatch[1]}-${houseNumMatch[2]} ${houseNumMatch[3]}`;
+              } else {
+                // Single number - create range
+                const num = parseInt(houseNumMatch[1]);
+                const street = houseNumMatch[3];
+                const nextNum = num + 2;
+                streetAddress = `${num}-${nextNum} ${street}`;
+              }
+            } else {
+              // Just use road name
+              streetAddress = addr.road;
+            }
+          } else {
+            streetAddress = addr.road;
+          }
+        }
+        
+        // Add comma at the end as per user's format
+        description = streetAddress.endsWith(',') ? streetAddress : streetAddress + ',';
+      } else if (data.display_name) {
+        // Fallback: try to extract street address from display_name
+        const displayParts = data.display_name.split(',');
+        const firstPart = displayParts[0].trim();
+        // Try to match house number pattern
+        const houseNumMatch = firstPart.match(/(\d+)(?:\s*[-–]\s*(\d+))?\s+(.+?)(?:,|$)/);
+        if (houseNumMatch) {
+          if (houseNumMatch[2]) {
+            description = `${houseNumMatch[1]}-${houseNumMatch[2]} ${houseNumMatch[3]},`;
+          } else {
+            const num = parseInt(houseNumMatch[1]);
+            const street = houseNumMatch[3];
+            const nextNum = num + 2;
+            description = `${num}-${nextNum} ${street},`;
+          }
+        } else {
+          // Just use first part with comma
+          description = firstPart.endsWith(',') ? firstPart : firstPart + ',';
+        }
+      }
+    } else if (data && data.display_name) {
+      // Fallback: extract from display_name
+      const displayParts = data.display_name.split(',');
+      const firstPart = displayParts[0].trim();
+      const houseNumMatch = firstPart.match(/(\d+)(?:\s*[-–]\s*(\d+))?\s+(.+?)(?:,|$)/);
+      if (houseNumMatch) {
+        if (houseNumMatch[2]) {
+          description = `${houseNumMatch[1]}-${houseNumMatch[2]} ${houseNumMatch[3]},`;
+        } else {
+          const num = parseInt(houseNumMatch[1]);
+          const street = houseNumMatch[3];
+          const nextNum = num + 2;
+          description = `${num}-${nextNum} ${street},`;
+        }
+      } else {
+        description = firstPart.endsWith(',') ? firstPart : firstPart + ',';
+      }
+    }
+    
+    // Cache the result
+    locationDescriptionCache.set(cacheKey, description);
+    return description;
+  } catch (e) {
+    console.error('Reverse geocoding error:', e);
+    // Fallback to coordinates
+    const fallback = `Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    locationDescriptionCache.set(cacheKey, fallback);
+    return fallback;
+  }
+}
+
 function setLocationMarker(lat, lng) {
   if (!locationMap) return;
   if (!locationMarker) {
@@ -514,6 +850,58 @@ function checkNearbyAlerts() {
   alertEl.classList.remove("hidden");
 }
 
+function updateActiveUsersCount() {
+  const activeUsersText = document.getElementById("active-users-text");
+  if (!activeUsersText) return;
+
+  // If user location is not available, show 0
+  if (!userLocation) {
+    activeUsersText.textContent = "0 people active nearby";
+    return;
+  }
+
+  // Count unique incidents within 1km radius reported in the last 15 minutes
+  // 15 minutes is a reasonable "active" window - users clear out after this time
+  const now = new Date();
+  const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
+  const nearbyRadius = 1000; // 1km
+
+  // Get unique incidents (by location) that are nearby and recent
+  const nearbyIncidents = incidents.filter((inc) => {
+    const incidentTime = new Date(inc.timestamp);
+    if (incidentTime < fifteenMinutesAgo) return false; // Only incidents from last 15 minutes
+
+    const dist = calculateDistanceMeters(
+      userLocation.lat,
+      userLocation.lng,
+      inc.latitude,
+      inc.longitude
+    );
+    return dist <= nearbyRadius;
+  });
+
+  // Count unique locations (estimating unique users based on unique incident locations)
+  // Group by rounded coordinates (within ~50m) to estimate unique users
+  const uniqueLocations = new Set();
+  nearbyIncidents.forEach((inc) => {
+    // Round to ~50m precision (approximately 0.0005 degrees)
+    const latKey = Math.round(inc.latitude * 2000) / 2000;
+    const lngKey = Math.round(inc.longitude * 2000) / 2000;
+    uniqueLocations.add(`${latKey},${lngKey}`);
+  });
+
+  const activeCount = uniqueLocations.size;
+
+  // Update the text
+  if (activeCount === 0) {
+    activeUsersText.textContent = "0 people active nearby";
+  } else if (activeCount === 1) {
+    activeUsersText.textContent = "1 person active nearby";
+  } else {
+    activeUsersText.textContent = `${activeCount} people active nearby`;
+  }
+}
+
 async function verifyAdmin(account, pin) {
   const res = await fetch(`${API_BASE}/admin/verify`, {
     method: "POST",
@@ -539,106 +927,302 @@ async function deleteIncident(id) {
   if (!res.ok) throw new Error("Failed to delete incident");
 }
 
+async function updateIncident(id, updateData) {
+  const res = await fetch(`${API_BASE}/admin/incidents/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updateData),
+  });
+  if (!res.ok) throw new Error("Failed to update incident");
+  return res.json();
+}
+
 async function renderAdminDashboard() {
   const adminBody = document.getElementById("admin-body");
-  adminBody.innerHTML = "<div class='incident-meta'>Loading incidents…</div>";
+  adminBody.innerHTML = "<div class='admin-loading'>Loading incidents…</div>";
   try {
     const data = await loadAdminIncidents();
+    
+    // Create dashboard container
+    const dashboard = document.createElement("div");
+    dashboard.className = "admin-dashboard";
+
+    // Admin header with logo, title, counter, and back button
+    const header = document.createElement("div");
+    header.className = "admin-dashboard-header";
+    
+    const headerLeft = document.createElement("div");
+    headerLeft.className = "admin-header-left";
+    
+    const logoBox = document.createElement("div");
+    logoBox.className = "admin-logo-box";
+    logoBox.innerHTML = "<span class='admin-logo-text'>A</span>";
+    
+    const headerText = document.createElement("div");
+    headerText.className = "admin-header-text";
+    const title = document.createElement("h1");
+    title.className = "admin-dashboard-title";
+    title.textContent = "Admin Dashboard";
+    const counter = document.createElement("div");
+    counter.className = "admin-reports-counter";
+    counter.textContent = `${data.length} Total Report${data.length !== 1 ? 's' : ''}`;
+    headerText.appendChild(title);
+    headerText.appendChild(counter);
+    
+    headerLeft.appendChild(logoBox);
+    headerLeft.appendChild(headerText);
+    
+    const headerRight = document.createElement("div");
+    headerRight.className = "admin-header-right";
+    const backBtn = document.createElement("button");
+    backBtn.type = "button";
+    backBtn.className = "admin-back-button";
+    backBtn.innerHTML = "← Back to Map";
+    backBtn.addEventListener("click", () => {
+      const adminModal = document.getElementById("admin-modal");
+      adminModal.classList.add("hidden");
+      adminModal.setAttribute("aria-hidden", "true");
+    });
+    headerRight.appendChild(backBtn);
+    
+    header.appendChild(headerLeft);
+    header.appendChild(headerRight);
+    dashboard.appendChild(header);
+
     if (!data.length) {
-      adminBody.innerHTML =
-        "<div class='incident-meta'>No incidents in the last 6 hours.</div>";
+      const emptyMsg = document.createElement("div");
+      emptyMsg.className = "admin-empty";
+      emptyMsg.textContent = "No incidents in the last 6 hours.";
+      dashboard.appendChild(emptyMsg);
+      adminBody.innerHTML = "";
+      adminBody.appendChild(dashboard);
       return;
     }
-    const container = document.createElement("div");
-    container.className = "incident-list";
 
-    // Admin header row with logout
-    const headerRow = document.createElement("div");
-    headerRow.className = "admin-header-row";
-    const headerText = document.createElement("div");
-    headerText.className = "incident-meta";
-    headerText.textContent = "Logged in as admin";
-    const logoutBtn = document.createElement("button");
-    logoutBtn.type = "button";
-    logoutBtn.className = "ghost-button";
-    logoutBtn.textContent = "Log out";
-    logoutBtn.addEventListener("click", () => {
-      isAdminLoggedIn = false;
-      adminBody.innerHTML = adminLoginTemplate;
-      setupAdminLoginForm();
-    });
-    headerRow.appendChild(headerText);
-    headerRow.appendChild(logoutBtn);
-    container.appendChild(headerRow);
+    // Report cards
+    const reportsContainer = document.createElement("div");
+    reportsContainer.className = "admin-reports-container";
+    
     data
       .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
       .forEach((inc) => {
-        const meta = categoryMeta[inc.category] || categoryMeta.other;
-        const card = document.createElement("article");
-        card.className = "incident-card";
-
-        const left = document.createElement("div");
-        left.className = "incident-card-left";
-        left.textContent = meta.emoji;
-
-        const main = document.createElement("div");
-        main.className = "incident-card-main";
-        const title = document.createElement("div");
-        title.className = "incident-title";
-        title.textContent = meta.label;
-
-        const metaLine = document.createElement("div");
-        metaLine.className = "incident-meta";
-        metaLine.textContent = `${humanTimeAgo(
-          inc.timestamp
-        )} • ${inc.is_verified ? "Verified" : "Unverified"}`;
-
-        const desc = document.createElement("div");
-        desc.className = "incident-description";
-        desc.textContent = inc.description || "";
-
-        const contact = document.createElement("div");
-        contact.className = "incident-meta";
-        const email = inc.contact_email || "—";
-        const phone = inc.contact_phone || "—";
-        contact.textContent = `Email: ${email} • Phone: ${phone}`;
-
-        main.appendChild(title);
-        main.appendChild(metaLine);
-        main.appendChild(desc);
-        main.appendChild(contact);
-
-        const actions = document.createElement("div");
-        actions.className = "incident-card-actions";
-        const delBtn = document.createElement("button");
-        delBtn.className = "ghost-button";
-        delBtn.type = "button";
-        delBtn.textContent = "Delete";
-        delBtn.addEventListener("click", async () => {
-          if (!confirm("Delete this incident?")) return;
-          try {
-            await deleteIncident(inc.id);
-            await fetchIncidents();
-            await renderAdminDashboard();
-          } catch (e) {
-            alert("Failed to delete incident.");
-          }
-        });
-        actions.appendChild(delBtn);
-
-        card.appendChild(left);
-        card.appendChild(main);
-        card.appendChild(actions);
-        container.appendChild(card);
+        const card = createAdminReportCard(inc);
+        reportsContainer.appendChild(card);
       });
 
+    dashboard.appendChild(reportsContainer);
     adminBody.innerHTML = "";
-    adminBody.appendChild(container);
+    adminBody.appendChild(dashboard);
   } catch (e) {
     console.error(e);
     adminBody.innerHTML =
       "<div class='error-text'>Unable to load incidents for admin.</div>";
   }
+}
+
+function createAdminReportCard(inc) {
+  const meta = categoryMeta[inc.category] || categoryMeta.other;
+  const card = document.createElement("article");
+  card.className = "admin-report-card";
+
+  // Card header with category icon and actions
+  const cardHeader = document.createElement("div");
+  cardHeader.className = "admin-card-header";
+  
+  const categoryIcon = document.createElement("div");
+  categoryIcon.className = "admin-category-icon";
+  categoryIcon.classList.add(`admin-category-icon-${inc.category}`);
+  categoryIcon.innerHTML = meta.emoji;
+  
+  const categoryName = document.createElement("div");
+  categoryName.className = "admin-category-name";
+  categoryName.textContent = meta.label.toUpperCase().replace(/\//g, " / ");
+
+  const tagsContainer = document.createElement("div");
+  tagsContainer.className = "admin-card-tags";
+  
+  const urgencyTag = document.createElement("span");
+  urgencyTag.className = `admin-tag admin-tag-urgency-${inc.urgency}`;
+  urgencyTag.textContent = inc.urgency.toUpperCase();
+  tagsContainer.appendChild(urgencyTag);
+  
+  const verifiedTag = document.createElement("span");
+  verifiedTag.className = `admin-tag admin-tag-${inc.is_verified ? 'verified' : 'unverified'}`;
+  verifiedTag.innerHTML = inc.is_verified ? "✓ Verified" : "Unverified";
+  tagsContainer.appendChild(verifiedTag);
+
+  cardHeader.appendChild(categoryIcon);
+  cardHeader.appendChild(categoryName);
+  cardHeader.appendChild(tagsContainer);
+
+  // Actions (Edit and Delete buttons in top right)
+  const actions = document.createElement("div");
+  actions.className = "admin-card-actions";
+  
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.className = "admin-action-btn admin-edit-btn";
+  editBtn.innerHTML = "✏️";
+  editBtn.title = "Edit";
+  editBtn.addEventListener("click", () => openEditModal(inc));
+  
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "admin-action-btn admin-delete-btn";
+  deleteBtn.innerHTML = "🗑️";
+  deleteBtn.title = "Delete";
+  deleteBtn.addEventListener("click", async () => {
+    if (!confirm("Delete this incident?")) return;
+    try {
+      await deleteIncident(inc.id);
+      await fetchIncidents();
+      await renderAdminDashboard();
+    } catch (e) {
+      alert("Failed to delete incident.");
+    }
+  });
+  
+  actions.appendChild(editBtn);
+  actions.appendChild(deleteBtn);
+
+  // Card content
+  const cardContent = document.createElement("div");
+  cardContent.className = "admin-card-content";
+  
+  const description = document.createElement("div");
+  description.className = "admin-card-description";
+  description.textContent = inc.description || "";
+  
+  const details = document.createElement("div");
+  details.className = "admin-card-details";
+  details.innerHTML = `
+    <div>Location: ${inc.latitude}, ${inc.longitude}</div>
+    <div>Time: ${humanTimeAgo(inc.timestamp)} • Cluster: ${inc.cluster_count || 1} report(s)</div>
+  `;
+
+  cardContent.appendChild(description);
+  cardContent.appendChild(details);
+
+  // Contact info section
+  const contactSection = document.createElement("div");
+  contactSection.className = "admin-contact-section";
+  
+  const contactToggle = document.createElement("button");
+  contactToggle.type = "button";
+  contactToggle.className = "admin-contact-toggle";
+  contactToggle.innerHTML = '<span class="toggle-icon">👁️</span> Hide Contact Info';
+  let contactVisible = true;
+  
+  const contactInfo = document.createElement("div");
+  contactInfo.className = "admin-contact-info";
+  contactInfo.innerHTML = `
+    <div><strong>Email:</strong> ${inc.contact_email || "—"}</div>
+    <div><strong>Phone:</strong> ${inc.contact_phone || "—"}</div>
+  `;
+
+  contactToggle.addEventListener("click", () => {
+    contactVisible = !contactVisible;
+    if (contactVisible) {
+      contactInfo.style.display = "block";
+      contactToggle.innerHTML = '<span class="toggle-icon">🚫</span> Hide Contact Info';
+    } else {
+      contactInfo.style.display = "none";
+      contactToggle.innerHTML = '<span class="toggle-icon">👁️</span> Show Contact Info';
+    }
+  });
+
+  contactSection.appendChild(contactToggle);
+  contactSection.appendChild(contactInfo);
+
+  // Assemble card
+  const cardTop = document.createElement("div");
+  cardTop.className = "admin-card-top";
+  cardTop.appendChild(cardHeader);
+  cardTop.appendChild(actions);
+
+  card.appendChild(cardTop);
+  card.appendChild(cardContent);
+  card.appendChild(contactSection);
+
+  return card;
+}
+
+function openEditModal(incident) {
+  const editModal = document.getElementById("edit-modal");
+  const editForm = document.getElementById("edit-form");
+  
+  // Set current values
+  document.getElementById("edit-description").value = incident.description || "";
+  
+  // Set category chip
+  const categoryChips = document.querySelectorAll("#edit-category-chips .chip");
+  categoryChips.forEach(chip => {
+    chip.classList.remove("active");
+    if (chip.dataset.value === incident.category) {
+      chip.classList.add("active");
+    }
+  });
+  
+  // Set urgency chip
+  const urgencyChips = document.querySelectorAll("#edit-urgency-chips .chip");
+  urgencyChips.forEach(chip => {
+    chip.classList.remove("active");
+    if (chip.dataset.value === incident.urgency) {
+      chip.classList.add("active");
+    }
+  });
+
+  // Store incident ID for update
+  editForm.dataset.incidentId = incident.id;
+  
+  editModal.classList.remove("hidden");
+  editModal.setAttribute("aria-hidden", "false");
+}
+
+function setupEditForm() {
+  const editForm = document.getElementById("edit-form");
+  const editClose = document.getElementById("edit-close");
+  const editModal = document.getElementById("edit-modal");
+  
+  if (!editForm) return;
+  
+  // Initialize chip selection for edit form
+  initChipSelection("edit-category-chips");
+  initChipSelection("edit-urgency-chips");
+  
+  editForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const incidentId = editForm.dataset.incidentId;
+    if (!incidentId) return;
+    
+    const category = getActiveChipValue("edit-category-chips");
+    const urgency = getActiveChipValue("edit-urgency-chips");
+    const description = document.getElementById("edit-description").value.trim();
+    
+    if (!category || !urgency || !description) {
+      alert("Please fill in all fields.");
+      return;
+    }
+    
+    try {
+      await updateIncident(incidentId, {
+        category,
+        urgency,
+        description,
+      });
+      await fetchIncidents();
+      await renderAdminDashboard();
+      editModal.classList.add("hidden");
+      editModal.setAttribute("aria-hidden", "true");
+    } catch (e) {
+      alert("Failed to update incident.");
+    }
+  });
+  
+  editClose.addEventListener("click", () => {
+    editModal.classList.add("hidden");
+    editModal.setAttribute("aria-hidden", "true");
+  });
 }
 
 function setupAdminLoginForm() {
@@ -664,24 +1248,19 @@ function setupAdminLoginForm() {
 function initAdminModal() {
   const adminButton = document.getElementById("admin-button");
   const adminModal = document.getElementById("admin-modal");
-  const adminClose = document.getElementById("admin-close");
   const adminBody = document.getElementById("admin-body");
 
   if (adminBody && !adminLoginTemplate) {
     adminLoginTemplate = adminBody.innerHTML;
   }
 
-  adminButton.addEventListener("click", () => {
+  adminButton.addEventListener("click", (e) => {
+    e.preventDefault();
     adminModal.classList.remove("hidden");
     adminModal.setAttribute("aria-hidden", "false");
     if (!isAdminLoggedIn) {
       setupAdminLoginForm();
     }
-  });
-
-  adminClose.addEventListener("click", () => {
-    adminModal.classList.add("hidden");
-    adminModal.setAttribute("aria-hidden", "true");
   });
 }
 
@@ -749,6 +1328,46 @@ function initFilters() {
   document
     .getElementById("list-urgency-filter")
     .addEventListener("change", () => renderList());
+  
+  // Quick filter in navigation bar - filters map directly
+  const quickFilter = document.getElementById("quick-filter");
+  if (quickFilter) {
+    quickFilter.addEventListener("change", (e) => {
+      const value = e.target.value;
+      
+      // Update map filter state
+      if (value === "high") {
+        mapFilterState.urgency = "high";
+        mapFilterState.hours = null;
+      } else if (value === "2" || value === "4") {
+        mapFilterState.hours = parseInt(value, 10);
+        mapFilterState.urgency = null;
+      } else {
+        // "All Reports" - clear filters
+        mapFilterState.hours = null;
+        mapFilterState.urgency = null;
+      }
+      
+      // Update map markers with filtered incidents
+      renderMapMarkers();
+      
+      // Also update list view filters if user is on list view (for consistency)
+      const listView = document.getElementById("view-list");
+      if (listView && listView.classList.contains("active")) {
+        if (value === "high") {
+          document.getElementById("list-urgency-filter").value = "high";
+        } else if (value === "2" || value === "4") {
+          document.getElementById("list-time-filter").value = value;
+        } else {
+          document.getElementById("list-time-filter").value = "";
+          document.getElementById("list-urgency-filter").value = "";
+        }
+        renderList();
+      }
+      
+      quickFilter.value = ""; // Reset dropdown
+    });
+  }
 }
 
 function initModalsAndButtons() {
@@ -771,12 +1390,6 @@ function initModalsAndButtons() {
     .getElementById("detail-close")
     .addEventListener("click", closeDetailModal);
 
-  document
-    .getElementById("filters-button")
-    .addEventListener("click", () => {
-      document.getElementById("tab-list").click();
-    });
-
   const identityRadios = document.querySelectorAll(
     'input[name="identity-mode"]'
   );
@@ -793,6 +1406,9 @@ function initModalsAndButtons() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  // Load user reactions from localStorage
+  loadUserReactions();
+  
   initMap();
   initLocationMap();
   initViewToggle();
@@ -801,6 +1417,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initChipSelection("category-chips");
   initChipSelection("urgency-chips");
   initAdminModal();
+  setupEditForm();
 
   try {
     await fetchIncidents();
@@ -812,12 +1429,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        userLocation = {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        };
-        updateUserMarkers();
-        checkNearbyAlerts();
+      userLocation = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+      };
+      updateUserMarkers();
+      checkNearbyAlerts();
+      updateActiveUsersCount();
       },
       () => {},
       { enableHighAccuracy: true, maximumAge: 60000 }
@@ -828,6 +1446,14 @@ window.addEventListener("DOMContentLoaded", async () => {
   setInterval(() => {
     fetchIncidents().catch(() => {});
   }, 60000);
+
+  // Periodically update active users count (every 30 seconds)
+  // This ensures counts decrease as incidents age beyond the 15-minute window
+  setInterval(() => {
+    if (userLocation) {
+      updateActiveUsersCount();
+    }
+  }, 30000);
 });
 
 

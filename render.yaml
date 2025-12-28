@@ -1,0 +1,36 @@
+services:
+  # Backend API Service
+  - type: web
+    name: community-map-api
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: MONGO_URL
+        sync: false  # Set this in Render dashboard
+      - key: DB_NAME
+        value: community_map
+      - key: CORS_ORIGINS
+        value: *
+      - key: ADMIN_ACCOUNT
+        sync: false  # Set this in Render dashboard
+      - key: ADMIN_PIN
+        sync: false  # Set this in Render dashboard
+    plan: free
+
+  # Frontend Static Site
+  - type: web
+    name: community-map-frontend
+    runtime: static
+    buildCommand: echo "No build needed for static site"
+    staticPublishPath: ./frontend
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+    plan: free

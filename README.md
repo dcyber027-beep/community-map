@@ -19,7 +19,7 @@ Users can report incidents (protests, theft, harassment, anti-social behaviour),
 Create `backend/.env` with at least:
 
 ```env
-MONGO_URL=mongodb://localhost:27017
+MONGO_URL=mongodb+srv://community_user:<db_password>@cluster0.k8yhupo.mongodb.net/?appName=Cluster0
 DB_NAME=community_map
 CORS_ORIGINS=*
 ADMIN_ACCOUNT=admin        # change in real use

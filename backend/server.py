@@ -49,6 +49,8 @@ class Incident(BaseModel):
     contact_phone: Optional[str] = None
     is_verified: bool = False
     cluster_count: int = 1
+    like_count: int = 0
+    dislike_count: int = 0
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class AdminAuth(BaseModel):
@@ -163,6 +165,8 @@ async def create_incident(input: IncidentCreate):
     incident_dict = input.model_dump()
     incident_dict['is_verified'] = is_verified
     incident_dict['cluster_count'] = cluster_count
+    incident_dict['like_count'] = 0
+    incident_dict['dislike_count'] = 0
     
     incident_obj = Incident(**incident_dict)
     
@@ -191,10 +195,15 @@ async def get_incidents(hours: Optional[int] = None):
         "contact_phone": 0
     }).to_list(1000)
     
-    # Convert ISO string timestamps back to datetime objects
+    # Convert ISO string timestamps back to datetime objects and ensure like/dislike counts exist
     for incident in incidents:
         if isinstance(incident['timestamp'], str):
             incident['timestamp'] = datetime.fromisoformat(incident['timestamp'])
+        # Ensure like_count and dislike_count exist for backward compatibility
+        if 'like_count' not in incident:
+            incident['like_count'] = 0
+        if 'dislike_count' not in incident:
+            incident['dislike_count'] = 0
     
     # Filter by time if specified
     if hours:
@@ -210,10 +219,15 @@ async def get_admin_incidents():
     """
     incidents = await db.incidents.find({}, {"_id": 0}).to_list(1000)
     
-    # Convert ISO string timestamps back to datetime objects
+    # Convert ISO string timestamps back to datetime objects and ensure like/dislike counts exist
     for incident in incidents:
         if isinstance(incident['timestamp'], str):
             incident['timestamp'] = datetime.fromisoformat(incident['timestamp'])
+        # Ensure like_count and dislike_count exist for backward compatibility
+        if 'like_count' not in incident:
+            incident['like_count'] = 0
+        if 'dislike_count' not in incident:
+            incident['dislike_count'] = 0
     
     return incidents
 
@@ -247,6 +261,39 @@ async def update_incident(incident_id: str, update_data: dict):
         raise HTTPException(status_code=404, detail="Incident not found")
     
     return {"success": True, "message": "Incident updated"}
+
+class ReactionRequest(BaseModel):
+    reaction: str  # "like" or "dislike"
+
+@api_router.post("/incidents/{incident_id}/react")
+async def react_to_incident(incident_id: str, reaction: ReactionRequest):
+    """
+    Add a like or dislike to an incident
+    """
+    if reaction.reaction not in ["like", "dislike"]:
+        raise HTTPException(status_code=400, detail="Reaction must be 'like' or 'dislike'")
+    
+    # Increment the appropriate count
+    field = "like_count" if reaction.reaction == "like" else "dislike_count"
+    
+    result = await db.incidents.update_one(
+        {"id": incident_id},
+        {"$inc": {field: 1}}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    
+    # Get updated incident to return counts
+    updated = await db.incidents.find_one({"id": incident_id}, {"_id": 0})
+    if not updated:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    
+    return {
+        "success": True,
+        "like_count": updated.get("like_count", 0),
+        "dislike_count": updated.get("dislike_count", 0)
+    }
 
 # Include the router in the main app
 app.include_router(api_router)
