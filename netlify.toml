@@ -1,0 +1,11 @@
+[build]
+  # No build command needed - it's a static site
+  command = ""
+  # Publish the frontend folder
+  publish = "frontend"
+
+[[redirects]]
+  # Redirect root to index.html (for SPA routing if needed)
+  from = "/*"
+  to = "/index.html"
+  status = 200
