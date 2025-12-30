@@ -88,12 +88,14 @@
             <strong class="updates-title">Live Updates</strong>
           </div>
           <div class="updates-info">
-            <span class="updates-text">Reports clear after 6 hours • Notifications for urgent incidents within 500m</span>
+            <div class="updates-scroll-container">
+              <span id="updates-text" class="updates-text">Loading...</span>
+            </div>
           </div>
         </div>
-        <div id="active-users-badge" class="active-users-badge">
+        <div id="active-users-badge" class="active-users-badge" role="button" tabindex="0">
           <span class="users-icon">👥</span>
-          <span id="active-users-text" class="active-users-text">0 people active nearby</span>
+          <span id="active-users-text" class="active-users-text">0 people active on the map, tap to chat</span>
         </div>
       </section>
 
@@ -390,8 +392,98 @@
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
+
+    <!-- Welcome Notice Popup -->
+    <div id="welcome-notice-modal" class="modal-overlay hidden" aria-hidden="true">
+      <div class="welcome-notice-content">
+        <button class="welcome-notice-close" id="welcome-notice-close" type="button" aria-label="Close welcome notice">&times;</button>
+        <div id="welcome-notice-body" class="welcome-notice-body">
+          <!-- Content will be loaded dynamically -->
+          <div class="welcome-notice-loading">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Highlight Street Modal -->
+    <div id="highlight-street-modal" class="modal-overlay hidden" aria-hidden="true">
+      <div class="highlight-modal-content">
+        <div class="highlight-header">
+          <h2>📍 Highlight a Street</h2>
+          <button class="highlight-close" id="highlight-close" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="highlight-map-container">
+          <div id="highlight-map" style="height: 400px; width: 100%; border-radius: 8px;"></div>
+          <div class="highlight-coordinates">
+            <div id="pin-a-coords" class="coord-box coord-start">Start (A) - Click on map</div>
+            <div id="pin-b-coords" class="coord-box coord-end">Destination (B) - Click on map</div>
+          </div>
+        </div>
+        <div class="highlight-form">
+          <div class="highlight-section">
+            <label class="highlight-label">Reason for Concern *</label>
+            <div class="reason-buttons">
+              <button type="button" class="reason-btn" data-reason="poor_lighting" data-color="yellow">
+                <span>💡</span> Poor Lighting
+              </button>
+              <button type="button" class="reason-btn" data-reason="crowded" data-color="yellow">
+                <span>👥</span> Crowded/Disruptive
+              </button>
+              <button type="button" class="reason-btn" data-reason="harassment" data-color="red">
+                <span>⚠️</span> Harassment/Suspicious
+              </button>
+              <button type="button" class="reason-btn" data-reason="protest" data-color="red">
+                <span>📢</span> Protest Spillover
+              </button>
+              <button type="button" class="reason-btn active" data-reason="other" data-color="yellow">
+                <span>📄</span> Other
+              </button>
+            </div>
+          </div>
+          <div class="highlight-section">
+            <label class="highlight-label">Additional Details (Optional)</label>
+            <textarea
+              id="highlight-description"
+              class="highlight-textarea"
+              placeholder="Add a description for this highlight..."
+              rows="3"
+              maxlength="500"
+            ></textarea>
+          </div>
+          <div class="highlight-actions">
+            <button type="button" class="button-secondary" id="highlight-cancel">Cancel</button>
+            <button type="button" class="button-primary" id="highlight-submit" disabled>Create Highlight</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat Modal -->
+    <div id="chat-modal" class="modal-overlay hidden" aria-hidden="true">
+      <div class="chat-modal-content">
+        <div class="chat-header">
+          <h2>💬 Group Chat</h2>
+          <button class="chat-close" id="chat-close" type="button" aria-label="Back to map" title="Back to map">&times;</button>
+        </div>
+        <div class="chat-messages-container" id="chat-messages-container">
+          <div class="chat-loading">Loading messages...</div>
+        </div>
+        <div class="chat-input-container">
+          <input
+            type="text"
+            id="chat-message-input"
+            class="chat-input"
+            placeholder="Type your message..."
+            maxlength="500"
+          />
+          <button id="chat-send-button" class="chat-send-button" type="button">
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+
     <script src="./app.js"></script>
   </body>
-  </html>
+</html>
 
 

@@ -219,16 +219,31 @@ async def get_admin_incidents():
     """
     incidents = await db.incidents.find({}, {"_id": 0}).to_list(1000)
     
-    # Convert ISO string timestamps back to datetime objects and ensure like/dislike counts exist
+    # Convert ISO string timestamps to ISO strings (not datetime objects) for JSON serialization
     for incident in incidents:
-        if isinstance(incident['timestamp'], str):
-            incident['timestamp'] = datetime.fromisoformat(incident['timestamp'])
+        # Handle timestamp - ensure it's always an ISO string
+        if 'timestamp' in incident:
+            if isinstance(incident.get('timestamp'), str):
+                # Already a string, keep it as is
+                pass
+            elif isinstance(incident.get('timestamp'), datetime):
+                # Convert datetime to ISO string
+                incident['timestamp'] = incident['timestamp'].isoformat()
+            else:
+                # Handle other types (e.g., None)
+                incident['timestamp'] = datetime.now(timezone.utc).isoformat()
+        else:
+            # Missing timestamp, add current time
+            incident['timestamp'] = datetime.now(timezone.utc).isoformat()
+        
         # Ensure like_count and dislike_count exist for backward compatibility
         if 'like_count' not in incident:
             incident['like_count'] = 0
         if 'dislike_count' not in incident:
             incident['dislike_count'] = 0
     
+    # Filter incidents from last 24 hours for admin dashboard
+    # (Still return all incidents, but the frontend may want to filter)
     return incidents
 
 @api_router.delete("/admin/incidents/{incident_id}")
@@ -293,6 +308,307 @@ async def react_to_incident(incident_id: str, reaction: ReactionRequest):
         "success": True,
         "like_count": updated.get("like_count", 0),
         "dislike_count": updated.get("dislike_count", 0)
+    }
+
+# Active Users Tracking
+@api_router.post("/users/heartbeat/{session_id}")
+async def user_heartbeat(session_id: str):
+    """
+    Track active users viewing the map
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=2)
+    
+    # Record/update this user's heartbeat
+    await db.active_users.update_one(
+        {"session_id": session_id},
+        {"$set": {"last_heartbeat": now.isoformat()}},
+        upsert=True
+    )
+    
+    # Clean up stale users and count active ones
+    await db.active_users.delete_many({"last_heartbeat": {"$lt": cutoff.isoformat()}})
+    active_count = await db.active_users.count_documents({"last_heartbeat": {"$gte": cutoff.isoformat()}})
+    
+    return {
+        "success": True,
+        "active_count": active_count
+    }
+
+# Group Chat Endpoints
+class ChatMessageCreate(BaseModel):
+    message: str
+    author: Optional[str] = "Anonymous"
+
+class ChatMessage(BaseModel):
+    id: str
+    message: str
+    author: str
+    timestamp: datetime
+
+@api_router.get("/chat/messages")
+async def get_chat_messages():
+    """
+    Get all chat messages (auto-cleanup messages older than 24 hours)
+    """
+    # Auto-cleanup: Remove messages older than 24 hours
+    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
+    await db.chat_messages.delete_many({
+        "timestamp": {"$lt": cutoff_time.isoformat()}
+    })
+    
+    # Get all messages
+    messages = await db.chat_messages.find({}, {"_id": 0}).sort("timestamp", 1).to_list(1000)
+    
+    # Convert timestamps to ISO strings for JSON serialization
+    result = []
+    for message in messages:
+        msg_dict = dict(message)
+        # Keep timestamp as ISO string for frontend
+        if isinstance(msg_dict['timestamp'], datetime):
+            msg_dict['timestamp'] = msg_dict['timestamp'].isoformat()
+        elif isinstance(msg_dict['timestamp'], str):
+            msg_dict['timestamp'] = msg_dict['timestamp']
+        result.append(msg_dict)
+    
+    return result
+
+@api_router.post("/chat/messages")
+async def create_chat_message(message_data: ChatMessageCreate):
+    """
+    Create a new chat message
+    """
+    message_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    
+    message_doc = {
+        "id": message_id,
+        "message": message_data.message,
+        "author": message_data.author or "Anonymous",
+        "timestamp": now.isoformat()
+    }
+    
+    await db.chat_messages.insert_one(message_doc)
+    
+    return {
+        "success": True,
+        "message": {
+            "id": message_id,
+            "message": message_data.message,
+            "author": message_data.author or "Anonymous",
+            "timestamp": now.isoformat()
+        }
+    }
+
+# Live Updates Content Management
+@api_router.get("/live-updates")
+async def get_live_updates():
+    """
+    Get the current live updates content
+    """
+    # Try to get from database, if not found use default
+    content = await db.live_updates.find_one({"_id": "content"})
+    
+    default_content = "Reports clear after 6 hours • Notifications for urgent incidents within 500m"
+    
+    if content:
+        return {
+            "success": True,
+            "content": content.get("text", default_content)
+        }
+    
+    return {
+        "success": True,
+        "content": default_content
+    }
+
+class LiveUpdatesRequest(BaseModel):
+    content: str
+
+@api_router.post("/admin/live-updates")
+async def update_live_updates(update: LiveUpdatesRequest):
+    """
+    Admin endpoint to update live updates content
+    """
+    # Verify admin (in production, add proper auth check)
+    await db.live_updates.update_one(
+        {"_id": "content"},
+        {"$set": {"text": update.content, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    
+    return {
+        "success": True,
+        "message": "Live updates content updated",
+        "content": update.content
+    }
+
+# Admin Street Highlights (persistent, not auto-cleared)
+class StreetHighlightCreate(BaseModel):
+    start_lat: float
+    start_lng: float
+    end_lat: float
+    end_lng: float
+    color: str  # "red", "yellow", "green"
+    reason: str  # "poor_lighting", "crowded", "harassment", "protest", "other"
+    description: Optional[str] = ""
+
+class StreetHighlight(BaseModel):
+    id: str
+    start_lat: float
+    start_lng: float
+    end_lat: float
+    end_lng: float
+    color: str
+    reason: str
+    description: str
+    created_at: datetime
+    created_by: str = "admin"
+
+@api_router.get("/street-highlights")
+async def get_street_highlights():
+    """
+    Get all admin-created street highlights (persistent, not auto-cleared)
+    """
+    highlights = await db.street_highlights.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    # Convert timestamps
+    for highlight in highlights:
+        if isinstance(highlight.get('created_at'), str):
+            highlight['created_at'] = highlight['created_at']
+        elif isinstance(highlight.get('created_at'), datetime):
+            highlight['created_at'] = highlight['created_at'].isoformat()
+    
+    return highlights
+
+@api_router.post("/admin/street-highlights")
+async def create_street_highlight(highlight_data: StreetHighlightCreate):
+    """
+    Admin endpoint to create a street highlight
+    """
+    highlight_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    
+    highlight_doc = {
+        "id": highlight_id,
+        "start_lat": highlight_data.start_lat,
+        "start_lng": highlight_data.start_lng,
+        "end_lat": highlight_data.end_lat,
+        "end_lng": highlight_data.end_lng,
+        "color": highlight_data.color,
+        "reason": highlight_data.reason,
+        "description": highlight_data.description or "",
+        "created_at": now.isoformat(),
+        "created_by": "admin"
+    }
+    
+    await db.street_highlights.insert_one(highlight_doc)
+    
+    highlight_doc["_id"] = 0  # Remove MongoDB _id
+    return {
+        "success": True,
+        "highlight": highlight_doc
+    }
+
+@api_router.put("/admin/street-highlights/{highlight_id}")
+async def update_street_highlight(highlight_id: str, update_data: dict):
+    """
+    Admin endpoint to update a street highlight (e.g., change color)
+    """
+    # Only allow updating certain fields
+    allowed_fields = {"color", "reason", "description"}
+    update_dict = {k: v for k, v in update_data.items() if k in allowed_fields}
+    
+    if not update_dict:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+    
+    result = await db.street_highlights.update_one(
+        {"id": highlight_id},
+        {"$set": update_dict}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Street highlight not found")
+    
+    # Return updated highlight
+    updated = await db.street_highlights.find_one({"id": highlight_id}, {"_id": 0})
+    if updated:
+        # Ensure timestamp is ISO string
+        if isinstance(updated.get('created_at'), datetime):
+            updated['created_at'] = updated['created_at'].isoformat()
+        elif isinstance(updated.get('created_at'), str):
+            pass  # Already a string
+    
+    return {"success": True, "highlight": updated}
+
+@api_router.delete("/admin/street-highlights/{highlight_id}")
+async def delete_street_highlight(highlight_id: str):
+    """
+    Admin endpoint to delete a street highlight
+    """
+    result = await db.street_highlights.delete_one({"id": highlight_id})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Street highlight not found")
+    
+    return {"success": True, "message": "Street highlight deleted"}
+
+# Welcome Popup Notice (first-time visitor notice)
+@api_router.get("/welcome-notice")
+async def get_welcome_notice():
+    """
+    Get the welcome notice content (shown to first-time visitors)
+    """
+    notice = await db.welcome_notice.find_one({})
+    
+    if notice:
+        return {
+            "content": notice.get("content", ""),
+            "enabled": notice.get("enabled", True)
+        }
+    
+    # Default content
+    default_content = """<h2>Welcome to Melbourne Community Map</h2>
+<p>This interactive map helps you stay informed about community incidents and safety in Melbourne.</p>
+<ul>
+<li>📍 Report incidents you've witnessed or experienced</li>
+<li>🗺️ View recent community reports on the map</li>
+<li>💬 Join the community chat to share updates</li>
+<li>📍 Check admin-highlighted streets for important information</li>
+</ul>
+<p>Your reports help keep the community safe. Stay alert and report responsibly.</p>"""
+    
+    return {
+        "content": default_content,
+        "enabled": True
+    }
+
+class WelcomeNoticeRequest(BaseModel):
+    content: str
+    enabled: bool = True
+
+@api_router.post("/admin/welcome-notice")
+async def update_welcome_notice(update: WelcomeNoticeRequest):
+    """
+    Admin endpoint to update the welcome notice content
+    """
+    await db.welcome_notice.update_one(
+        {},
+        {
+            "$set": {
+                "content": update.content,
+                "enabled": update.enabled,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+        },
+        upsert=True
+    )
+    
+    return {
+        "success": True,
+        "message": "Welcome notice updated",
+        "content": update.content,
+        "enabled": update.enabled
     }
 
 # Include the router in the main app
