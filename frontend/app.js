@@ -1774,23 +1774,23 @@ function addStreetHighlightsLegend() {
   
   legend.onAdd = function() {
     const div = L.DomUtil.create("div", "street-highlights-legend");
-    div.style.cssText = "background: white; padding: 0.5rem 0.625rem; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); font-size: 0.75rem; line-height: 1.4; min-width: 180px; z-index: 1000;";
+    div.style.cssText = "background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(8px); padding: 0.375rem 0.5rem; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 0.6875rem; line-height: 1.3; min-width: 140px; max-width: 160px; z-index: 1000;";
     div.innerHTML = `
-      <div style="font-weight: 600; margin-bottom: 0.375rem; font-size: 0.8125rem;">Street Highlights</div>
-      <div style="display: flex; align-items: center; margin-bottom: 0.25rem;">
-        <div style="width: 24px; height: 3px; background: #ef4444; border-radius: 2px; margin-right: 0.5rem;"></div>
-        <span style="font-size: 0.75rem;">Multiple urgent reports</span>
+      <div style="font-weight: 600; margin-bottom: 0.25rem; font-size: 0.75rem;">Street Highlights</div>
+      <div style="display: flex; align-items: center; margin-bottom: 0.1875rem;">
+        <div style="width: 18px; height: 2.5px; background: #ef4444; border-radius: 1px; margin-right: 0.375rem; flex-shrink: 0;"></div>
+        <span style="font-size: 0.6875rem; line-height: 1.2;">Multiple urgent reports</span>
+      </div>
+      <div style="display: flex; align-items: center; margin-bottom: 0.1875rem;">
+        <div style="width: 18px; height: 2.5px; background: #eab308; border-radius: 1px; margin-right: 0.375rem; flex-shrink: 0;"></div>
+        <span style="font-size: 0.6875rem; line-height: 1.2;">Medium activity</span>
       </div>
       <div style="display: flex; align-items: center; margin-bottom: 0.25rem;">
-        <div style="width: 24px; height: 3px; background: #eab308; border-radius: 2px; margin-right: 0.5rem;"></div>
-        <span style="font-size: 0.75rem;">Medium activity</span>
+        <div style="width: 18px; height: 2.5px; background: #22c55e; border-radius: 1px; margin-right: 0.375rem; flex-shrink: 0;"></div>
+        <span style="font-size: 0.6875rem; line-height: 1.2;">Low concern</span>
       </div>
-      <div style="display: flex; align-items: center; margin-bottom: 0.375rem;">
-        <div style="width: 24px; height: 3px; background: #22c55e; border-radius: 2px; margin-right: 0.5rem;"></div>
-        <span style="font-size: 0.75rem;">Low concern</span>
-      </div>
-      <div style="font-size: 0.6875rem; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 0.375rem; margin-top: 0.375rem; line-height: 1.3;">
-        Tap highlighted segments for details. Not a safety guarantee - stay alert.
+      <div style="font-size: 0.625rem; color: #6b7280; border-top: 1px solid rgba(229, 231, 235, 0.5); padding-top: 0.25rem; margin-top: 0.25rem; line-height: 1.2;">
+        Tap segments for details
       </div>
     `;
     return div;
