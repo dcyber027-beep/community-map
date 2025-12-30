@@ -1774,22 +1774,22 @@ function addStreetHighlightsLegend() {
   
   legend.onAdd = function() {
     const div = L.DomUtil.create("div", "street-highlights-legend");
-    div.style.cssText = "background: white; padding: 0.75rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); font-size: 0.8125rem; line-height: 1.5; min-width: 220px; z-index: 1000;";
+    div.style.cssText = "background: white; padding: 0.5rem 0.625rem; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); font-size: 0.75rem; line-height: 1.4; min-width: 180px; z-index: 1000;";
     div.innerHTML = `
-      <div style="font-weight: 600; margin-bottom: 0.5rem; font-size: 0.875rem;">Street Highlights</div>
-      <div style="display: flex; align-items: center; margin-bottom: 0.375rem;">
-        <div style="width: 28px; height: 4px; background: #ef4444; border-radius: 2px; margin-right: 0.5rem;"></div>
-        <span>Multiple urgent reports</span>
+      <div style="font-weight: 600; margin-bottom: 0.375rem; font-size: 0.8125rem;">Street Highlights</div>
+      <div style="display: flex; align-items: center; margin-bottom: 0.25rem;">
+        <div style="width: 24px; height: 3px; background: #ef4444; border-radius: 2px; margin-right: 0.5rem;"></div>
+        <span style="font-size: 0.75rem;">Multiple urgent reports</span>
+      </div>
+      <div style="display: flex; align-items: center; margin-bottom: 0.25rem;">
+        <div style="width: 24px; height: 3px; background: #eab308; border-radius: 2px; margin-right: 0.5rem;"></div>
+        <span style="font-size: 0.75rem;">Medium activity</span>
       </div>
       <div style="display: flex; align-items: center; margin-bottom: 0.375rem;">
-        <div style="width: 28px; height: 4px; background: #eab308; border-radius: 2px; margin-right: 0.5rem;"></div>
-        <span>Medium activity</span>
+        <div style="width: 24px; height: 3px; background: #22c55e; border-radius: 2px; margin-right: 0.5rem;"></div>
+        <span style="font-size: 0.75rem;">Low concern</span>
       </div>
-      <div style="display: flex; align-items: center; margin-bottom: 0.5rem;">
-        <div style="width: 28px; height: 4px; background: #22c55e; border-radius: 2px; margin-right: 0.5rem;"></div>
-        <span>Low concern</span>
-      </div>
-      <div style="font-size: 0.75rem; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 0.5rem; margin-top: 0.5rem;">
+      <div style="font-size: 0.6875rem; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 0.375rem; margin-top: 0.375rem; line-height: 1.3;">
         Tap highlighted segments for details. Not a safety guarantee - stay alert.
       </div>
     `;
