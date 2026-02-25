@@ -2113,6 +2113,36 @@ function closeStreetNoteModal() {
   modal.setAttribute("aria-hidden", "true");
 }
 
+async function fileToImageDataUrl(file, maxWidth = 1280, maxHeight = 1280, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        const scale = Math.min(maxWidth / width, maxHeight / height, 1);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Unable to process image"));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = () => reject(new Error("Invalid image file"));
+      img.src = String(reader.result || "");
+    };
+    reader.onerror = () => reject(new Error("Unable to read image file"));
+    reader.readAsDataURL(file);
+  });
+}
+
 async function submitStreetNote() {
   const textarea = document.getElementById("street-note-text");
   const text = textarea ? textarea.value.trim() : "";
@@ -2139,12 +2169,16 @@ async function submitStreetNote() {
     // Optional image: convert to data URL for lightweight local testing
     let imageUrl = "";
     if (selectedFile) {
-      imageUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result || "");
-        reader.onerror = reject;
-        reader.readAsDataURL(selectedFile);
-      });
+      // Guard very large files early
+      if (selectedFile.size > 10 * 1024 * 1024) {
+        throw new Error("Image too large. Please choose an image under 10MB.");
+      }
+      // Compress/resize for stable posting in production
+      imageUrl = await fileToImageDataUrl(selectedFile, 1280, 1280, 0.8);
+      // Soft limit after encoding (base64 grows payload)
+      if (imageUrl.length > 2_000_000) {
+        throw new Error("Image is still too large after compression. Try a smaller image.");
+      }
     }
 
     const response = await fetch(`${API_BASE}/street-notes`, {
@@ -2168,7 +2202,7 @@ async function submitStreetNote() {
     }
   } catch (error) {
     console.error("Failed to post street note:", error);
-    alert("Failed to post note. Please try again.");
+    alert(error && error.message ? error.message : "Failed to post note. Please try again.");
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.textContent = "Post Note";
@@ -2254,7 +2288,11 @@ function initStreetNoteModal() {
         return;
       }
       const kb = Math.round(file.size / 1024);
-      imageMeta.textContent = `${file.name} (${kb} KB)`;
+      if (kb > 10240) {
+        imageMeta.textContent = `${file.name} (${kb} KB) - too large (max 10MB)`;
+      } else {
+        imageMeta.textContent = `${file.name} (${kb} KB)`;
+      }
     });
   }
   
