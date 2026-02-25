@@ -34,6 +34,10 @@ let highlightPinB = null; // Second pin for creating highlight
 let highlightMap = null; // Map instance for highlight creation modal
 let selectedHighlightColor = "yellow"; // Default color
 let selectedHighlightReason = "other"; // Default reason
+let streetNotes = []; // Store street notes
+let streetNotesLayer = null; // Layer for street note markers
+let showStreetNotes = true; // Toggle for showing/hiding street notes
+let streetNoteLocation = null; // Selected location for Street Note modal
 
 // Load user reactions from localStorage on page load
 function loadUserReactions() {
@@ -210,10 +214,13 @@ function renderList() {
   const items = filteredIncidentsForList().sort(
     (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
   );
+  const noteItems = [...streetNotes].sort(
+    (a, b) => new Date(b.created_at) - new Date(a.created_at)
+  );
 
-  if (!items.length) {
+  if (!items.length && !noteItems.length) {
     const empty = document.createElement("div");
-    empty.textContent = "No incidents in this time window.";
+    empty.textContent = "No incidents or street notes in this time window.";
     empty.style.fontSize = "0.85rem";
     empty.style.color = "#9ca3af";
     container.appendChild(empty);
@@ -323,6 +330,106 @@ function renderList() {
 
     card.appendChild(left);
     card.appendChild(main);
+    card.appendChild(actions);
+    container.appendChild(card);
+  });
+
+  // Add Street Notes into list view (ambient layer)
+  noteItems.forEach((note) => {
+    const card = document.createElement("article");
+    card.className = "incident-card";
+    card.style.borderLeft = "3px solid #1E88E5";
+
+    const left = document.createElement("div");
+    left.className = "incident-card-left";
+    left.textContent = "📝";
+
+    const main = document.createElement("div");
+    main.className = "incident-card-main";
+
+    const title = document.createElement("div");
+    title.className = "incident-title";
+    title.textContent = "Street Note";
+
+    const metaLine = document.createElement("div");
+    metaLine.className = "incident-meta";
+    metaLine.textContent = `${humanTimeAgo(note.created_at)} • Expires in 24h`;
+
+    const location = document.createElement("div");
+    location.className = "incident-location";
+    location.innerHTML = `<strong>Location:</strong> ${note.location_text || `${Number(note.latitude).toFixed(4)}, ${Number(note.longitude).toFixed(4)}`}`;
+
+    const desc = document.createElement("div");
+    desc.className = "incident-description";
+    desc.textContent = note.text;
+
+    main.appendChild(title);
+    main.appendChild(metaLine);
+    main.appendChild(location);
+    main.appendChild(desc);
+
+    if (note.image_url) {
+      const imgWrap = document.createElement("div");
+      imgWrap.style.marginTop = "0.5rem";
+      const img = document.createElement("img");
+      img.src = note.image_url;
+      img.alt = "Street note image";
+      img.style.width = "100%";
+      img.style.maxWidth = "220px";
+      img.style.maxHeight = "150px";
+      img.style.objectFit = "cover";
+      img.style.borderRadius = "8px";
+      img.style.border = "1px solid #dbeafe";
+      imgWrap.appendChild(img);
+      main.appendChild(imgWrap);
+    }
+
+    card.appendChild(left);
+    card.appendChild(main);
+    
+    const actions = document.createElement("div");
+    actions.className = "incident-card-actions";
+    const viewBtn = document.createElement("button");
+    viewBtn.className = "secondary-button";
+    viewBtn.type = "button";
+    viewBtn.textContent = "View on map";
+    viewBtn.addEventListener("click", () => {
+      const mapTab = document.getElementById("tab-map");
+      const listTab = document.getElementById("tab-list");
+      const mapView = document.getElementById("view-map");
+      const listView = document.getElementById("view-list");
+
+      mapTab.classList.add("active");
+      listTab.classList.remove("active");
+      mapView.classList.add("active");
+      listView.classList.remove("active");
+
+      if (map) {
+        map.setView([note.latitude, note.longitude], 17);
+        setTimeout(() => {
+          map.invalidateSize();
+          const imageHtml = note.image_url
+            ? `<div style="margin-bottom: 0.5rem;"><img src="${note.image_url}" alt="Street note image" style="display:block; width:100%; max-width:220px; max-height:150px; object-fit:cover; border-radius:6px; border:1px solid #dbeafe;" /></div>`
+            : "";
+          const locationHtml = note.location_text
+            ? `<div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.5rem;">📍 ${note.location_text}</div>`
+            : "";
+          L.popup()
+            .setLatLng([note.latitude, note.longitude])
+            .setContent(`
+              <div style="max-width: 240px; padding: 0.25rem;">
+                ${imageHtml}
+                ${locationHtml}
+                <div style="font-size: 0.9375rem; color: #1f2937; line-height: 1.5; margin-bottom: 0.5rem;">${note.text}</div>
+                <div style="font-size: 0.75rem; color: #9ca3af;">${humanTimeAgo(note.created_at)} &middot; expires in 24h</div>
+              </div>
+            `)
+            .openOn(map);
+        }, 300);
+      }
+    });
+    actions.appendChild(viewBtn);
+
     card.appendChild(actions);
     container.appendChild(card);
   });
@@ -1664,12 +1771,19 @@ function initMap() {
   }).addTo(map);
   mainMarkersLayer = L.layerGroup().addTo(map);
   adminHighlightsLayer = L.layerGroup().addTo(map);
+  streetNotesLayer = L.layerGroup().addTo(map);
   
   // Add street highlights legend
   addStreetHighlightsLegend();
   
+  // Add notes toggle control
+  addNotesToggle();
+  
   // Load and render admin street highlights
   fetchAdminStreetHighlights();
+  
+  // Load and render street notes
+  fetchStreetNotes();
 }
 
 // Admin Street Highlights Functions
@@ -1862,6 +1976,293 @@ function initFilters() {
       }
       
       quickFilter.value = ""; // Reset dropdown
+    });
+  }
+}
+
+// Street Notes Functions
+async function fetchStreetNotes() {
+  try {
+    const response = await fetch(`${API_BASE}/street-notes`);
+    if (response.ok) {
+      streetNotes = await response.json();
+      renderStreetNotes();
+      renderList();
+    }
+  } catch (error) {
+    console.error("Failed to fetch street notes:", error);
+  }
+}
+
+function renderStreetNotes() {
+  if (!streetNotesLayer) return;
+  streetNotesLayer.clearLayers();
+  
+  if (!showStreetNotes) return;
+  
+  streetNotes.forEach((note) => {
+    const icon = L.divIcon({
+      className: "street-note-pin",
+      html: '<div style="background: #1E88E5; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-size: 12px;">📝</div>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+    
+    const marker = L.marker([note.latitude, note.longitude], { icon });
+    
+    const timeAgo = humanTimeAgo(note.created_at);
+    const imageHtml = note.image_url
+      ? `<div style="margin-bottom: 0.5rem;"><img src="${note.image_url}" alt="Street note image" style="display:block; width:100%; max-width:200px; max-height:140px; object-fit:cover; border-radius: 6px; border: 1px solid #dbeafe;" /></div>`
+      : "";
+    const locationHtml = note.location_text
+      ? `<div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.5rem;">📍 ${note.location_text}</div>`
+      : "";
+    marker.bindPopup(`
+      <div style="max-width: 220px; padding: 0.25rem;">
+        ${imageHtml}
+        ${locationHtml}
+        <div style="font-size: 0.9375rem; color: #1f2937; line-height: 1.5; margin-bottom: 0.5rem;">${note.text}</div>
+        <div style="font-size: 0.75rem; color: #9ca3af;">${timeAgo} &middot; expires in 24h</div>
+      </div>
+    `);
+    
+    streetNotesLayer.addLayer(marker);
+  });
+}
+
+function addNotesToggle() {
+  if (!map) return;
+  
+  const toggle = L.control({ position: "topright" });
+  
+  toggle.onAdd = function() {
+    const div = L.DomUtil.create("div", "notes-toggle-container");
+    div.innerHTML = `
+      <span style="font-size: 0.75rem;">📝 Notes</span>
+      <div class="notes-toggle-switch active" id="notes-toggle"></div>
+    `;
+    
+    L.DomEvent.disableClickPropagation(div);
+    
+    const toggleSwitch = div.querySelector("#notes-toggle");
+    toggleSwitch.addEventListener("click", () => {
+      showStreetNotes = !showStreetNotes;
+      toggleSwitch.classList.toggle("active", showStreetNotes);
+      renderStreetNotes();
+    });
+    
+    return div;
+  };
+  
+  toggle.addTo(map);
+}
+
+function openStreetNoteModal() {
+  const modal = document.getElementById("street-note-modal");
+  if (!modal) return;
+  
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  
+  // Reset form
+  const textarea = document.getElementById("street-note-text");
+  const countEl = document.getElementById("street-note-count");
+  const submitBtn = document.getElementById("street-note-submit");
+  const imageInput = document.getElementById("street-note-image");
+  const imageMeta = document.getElementById("street-note-image-meta");
+  const locationInput = document.getElementById("street-note-location");
+  if (textarea) textarea.value = "";
+  if (countEl) countEl.textContent = "0";
+  if (submitBtn) submitBtn.disabled = true;
+  if (submitBtn) submitBtn.textContent = "Post Note";
+  if (imageInput) imageInput.value = "";
+  if (imageMeta) imageMeta.textContent = "No image selected";
+  if (locationInput) locationInput.value = "";
+  
+  // Get user location for display
+  const locationDisplay = document.getElementById("street-note-location");
+  if (userLocation) {
+    streetNoteLocation = { lat: userLocation.lat, lng: userLocation.lng };
+    reverseGeocode(userLocation.lat, userLocation.lng).then(desc => {
+      if (locationDisplay) locationDisplay.value = desc || `${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`;
+    });
+  } else if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        streetNoteLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        reverseGeocode(userLocation.lat, userLocation.lng).then(desc => {
+          if (locationDisplay) locationDisplay.value = desc || `${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`;
+        });
+      },
+      () => {
+        streetNoteLocation = { lat: MELBOURNE_CBD.lat, lng: MELBOURNE_CBD.lng };
+        if (locationDisplay) locationDisplay.value = "Melbourne CBD (default)";
+      }
+    );
+  } else {
+    streetNoteLocation = { lat: MELBOURNE_CBD.lat, lng: MELBOURNE_CBD.lng };
+    if (locationDisplay) locationDisplay.value = "Melbourne CBD (default)";
+  }
+}
+
+function closeStreetNoteModal() {
+  const modal = document.getElementById("street-note-modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+async function submitStreetNote() {
+  const textarea = document.getElementById("street-note-text");
+  const text = textarea ? textarea.value.trim() : "";
+  const locationInput = document.getElementById("street-note-location");
+  const locationText = locationInput ? locationInput.value.trim() : "";
+  const imageInput = document.getElementById("street-note-image");
+  const selectedFile = imageInput && imageInput.files ? imageInput.files[0] : null;
+  
+  if (!text) {
+    alert("Please write something for your note.");
+    return;
+  }
+  
+  const lat = streetNoteLocation ? streetNoteLocation.lat : (userLocation ? userLocation.lat : MELBOURNE_CBD.lat);
+  const lng = streetNoteLocation ? streetNoteLocation.lng : (userLocation ? userLocation.lng : MELBOURNE_CBD.lng);
+  
+  const submitBtn = document.getElementById("street-note-submit");
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Posting...";
+  }
+  
+  try {
+    // Optional image: convert to data URL for lightweight local testing
+    let imageUrl = "";
+    if (selectedFile) {
+      imageUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result || "");
+        reader.onerror = reject;
+        reader.readAsDataURL(selectedFile);
+      });
+    }
+
+    const response = await fetch(`${API_BASE}/street-notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: text,
+        latitude: lat,
+        longitude: lng,
+        location_text: locationText,
+        image_url: imageUrl
+      }),
+    });
+    
+    if (response.ok) {
+      await fetchStreetNotes();
+      closeStreetNoteModal();
+    } else {
+      const errText = await response.text();
+      throw new Error(`Failed to post note: ${response.status} ${errText}`);
+    }
+  } catch (error) {
+    console.error("Failed to post street note:", error);
+    alert("Failed to post note. Please try again.");
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Post Note";
+    }
+  }
+}
+
+function initStreetNoteModal() {
+  // Notes button
+  const notesBtn = document.getElementById("notes-button");
+  if (notesBtn) {
+    notesBtn.addEventListener("click", openStreetNoteModal);
+  }
+  
+  // Close button
+  const closeBtn = document.getElementById("street-note-close");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", closeStreetNoteModal);
+  }
+  
+  // Submit button
+  const submitBtn = document.getElementById("street-note-submit");
+  if (submitBtn) {
+    submitBtn.addEventListener("click", submitStreetNote);
+  }
+
+  // Use current location button
+  const useLocationBtn = document.getElementById("street-note-use-location");
+  if (useLocationBtn) {
+    useLocationBtn.addEventListener("click", () => {
+      const locationDisplay = document.getElementById("street-note-location");
+      if (!navigator.geolocation) {
+        if (locationDisplay) locationDisplay.textContent = "GPS unavailable on this device";
+        streetNoteLocation = { lat: MELBOURNE_CBD.lat, lng: MELBOURNE_CBD.lng };
+        return;
+      }
+      useLocationBtn.disabled = true;
+      useLocationBtn.textContent = "Getting location...";
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          streetNoteLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          reverseGeocode(streetNoteLocation.lat, streetNoteLocation.lng).then((desc) => {
+            if (locationDisplay) {
+              locationDisplay.value = desc || `${streetNoteLocation.lat.toFixed(4)}, ${streetNoteLocation.lng.toFixed(4)}`;
+            }
+          });
+          useLocationBtn.disabled = false;
+          useLocationBtn.textContent = "Use my current GPS location";
+        },
+        () => {
+          if (locationDisplay) locationDisplay.value = "Could not access GPS location";
+          useLocationBtn.disabled = false;
+          useLocationBtn.textContent = "Use my current GPS location";
+        },
+        { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 }
+      );
+    });
+  }
+  
+  // Character counter
+  const textarea = document.getElementById("street-note-text");
+  if (textarea) {
+    textarea.addEventListener("input", () => {
+      const count = textarea.value.length;
+      const countEl = document.getElementById("street-note-count");
+      if (countEl) countEl.textContent = count;
+      
+      const btn = document.getElementById("street-note-submit");
+      if (btn) btn.disabled = count === 0 || count > 150;
+    });
+  }
+
+  // Image file metadata
+  const imageInput = document.getElementById("street-note-image");
+  if (imageInput) {
+    imageInput.addEventListener("change", () => {
+      const imageMeta = document.getElementById("street-note-image-meta");
+      const file = imageInput.files && imageInput.files[0] ? imageInput.files[0] : null;
+      if (!imageMeta) return;
+      if (!file) {
+        imageMeta.textContent = "No image selected";
+        return;
+      }
+      const kb = Math.round(file.size / 1024);
+      imageMeta.textContent = `${file.name} (${kb} KB)`;
+    });
+  }
+  
+  // Backdrop click
+  const modal = document.getElementById("street-note-modal");
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeStreetNoteModal();
     });
   }
 }
@@ -2511,6 +2912,8 @@ async function checkAndShowWelcomeNotice() {
 }
 
 function showWelcomeNotice() {
+  // Never open Street Note modal from welcome popup flow.
+  closeStreetNoteModal();
   const modal = document.getElementById("welcome-notice-modal");
   const body = document.getElementById("welcome-notice-body");
   
@@ -2841,6 +3244,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   setupEditForm();
   initChat(); // Initialize chat functionality
   initHighlightStreetModal(); // Initialize highlight street modal
+  initStreetNoteModal(); // Initialize street notes modal
 
   try {
     await fetchIncidents();
@@ -2870,6 +3274,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Periodically refresh incidents (e.g. every 60s)
   setInterval(() => {
     fetchIncidents().catch(() => {});
+    fetchStreetNotes().catch(() => {});
   }, 60000);
 
   // Periodically update active users count (every 30 seconds)

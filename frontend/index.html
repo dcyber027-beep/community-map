@@ -73,10 +73,12 @@
             </select>
           </div>
         </div>
-        <div class="nav-right">
+        <div class="nav-right action-buttons">
+          <button id="notes-button" class="notes-button" type="button">
+            📝 St Notes
+          </button>
           <button id="report-button" class="report-button" type="button">
-            <span class="plus-icon">+</span>
-            Report Incident
+            + Report
           </button>
         </div>
       </section>
@@ -392,6 +394,47 @@
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
+
+    <!-- Street Note Modal (Bottom Sheet) -->
+    <div id="street-note-modal" class="street-note-overlay hidden" aria-hidden="true">
+      <div class="street-note-sheet">
+        <div class="street-note-header">
+          <div>
+            <h2 class="street-note-title">📝 Street Note</h2>
+            <p class="street-note-subtitle">This note disappears in 24 hours.</p>
+          </div>
+          <button class="street-note-close" id="street-note-close" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="street-note-body">
+          <div class="street-note-field">
+            <label class="street-note-label">📍 Location</label>
+            <button type="button" id="street-note-use-location" class="street-note-location-btn">
+              Use my current GPS location
+            </button>
+            <input
+              id="street-note-location"
+              class="street-note-location-display"
+              type="text"
+              placeholder="e.g. 151-211C Wellington Road"
+              value=""
+            />
+          </div>
+          <div class="street-note-field">
+            <label class="street-note-label">✏️ What's happening?</label>
+            <textarea id="street-note-text" class="street-note-textarea" placeholder="City whispers" maxlength="150" rows="3"></textarea>
+            <div class="street-note-char-count"><span id="street-note-count">0</span>/150</div>
+          </div>
+          <div class="street-note-field">
+            <label class="street-note-label">📷 Optional image</label>
+            <input id="street-note-image" class="street-note-image-input" type="file" accept="image/*" />
+            <div id="street-note-image-meta" class="street-note-image-meta">No image selected</div>
+          </div>
+          <button type="button" class="street-note-submit" id="street-note-submit" disabled>
+            Post Note
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Welcome Notice Popup -->
     <div id="welcome-notice-modal" class="modal-overlay hidden" aria-hidden="true">

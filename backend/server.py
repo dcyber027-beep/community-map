@@ -553,6 +553,66 @@ async def delete_street_highlight(highlight_id: str):
     
     return {"success": True, "message": "Street highlight deleted"}
 
+# Street Notes (temporary, location-based posts that expire in 24 hours)
+class StreetNoteCreate(BaseModel):
+    text: str
+    latitude: float
+    longitude: float
+    location_text: Optional[str] = ""
+    image_url: Optional[str] = None
+
+@api_router.get("/street-notes")
+async def get_street_notes():
+    """
+    Get all non-expired street notes (auto-cleanup of expired ones)
+    """
+    now = datetime.now(timezone.utc)
+    
+    # Delete expired notes
+    await db.street_notes.delete_many({
+        "expires_at": {"$lt": now.isoformat()}
+    })
+    
+    notes = await db.street_notes.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    
+    # Ensure timestamps are strings
+    for note in notes:
+        if isinstance(note.get('created_at'), datetime):
+            note['created_at'] = note['created_at'].isoformat()
+        if isinstance(note.get('expires_at'), datetime):
+            note['expires_at'] = note['expires_at'].isoformat()
+    
+    return notes
+
+@api_router.post("/street-notes")
+async def create_street_note(note_data: StreetNoteCreate):
+    """
+    Create a new street note (auto-expires in 24 hours)
+    """
+    if not note_data.text or not note_data.text.strip():
+        raise HTTPException(status_code=400, detail="Note text is required")
+    if len(note_data.text) > 150:
+        raise HTTPException(status_code=400, detail="Note text must be 150 characters or less")
+    
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(hours=24)
+    
+    note_doc = {
+        "id": str(uuid.uuid4()),
+        "text": note_data.text.strip(),
+        "latitude": note_data.latitude,
+        "longitude": note_data.longitude,
+        "location_text": (note_data.location_text or "").strip(),
+        "image_url": note_data.image_url or "",
+        "created_at": now.isoformat(),
+        "expires_at": expires_at.isoformat()
+    }
+    
+    await db.street_notes.insert_one(note_doc)
+    note_doc.pop("_id", None)
+    
+    return {"success": True, "note": note_doc}
+
 # Welcome Popup Notice (first-time visitor notice)
 @api_router.get("/welcome-notice")
 async def get_welcome_notice():
