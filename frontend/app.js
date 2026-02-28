@@ -3271,8 +3271,7 @@ function initCollapsibleHeader() {
   const isModalOpen = () =>
     document.querySelector('.modal:not(.hidden)') ||
     document.querySelector('.modal-overlay:not(.hidden)') ||
-    document.querySelector('.street-note-overlay:not(.hidden)') ||
-    document.querySelector('.chat-modal-content');
+    document.querySelector('.street-note-overlay:not(.hidden)');
 
   const collapse = () => {
     if (document.body.classList.contains('header-collapsed')) return;
@@ -3288,14 +3287,14 @@ function initCollapsibleHeader() {
 
   document.addEventListener('touchstart', (e) => {
     touchStartY = e.touches[0].clientY;
-  }, { passive: true });
+  }, { passive: true, capture: true });
 
   document.addEventListener('touchend', (e) => {
     if (isModalOpen()) return;
     const deltaY = touchStartY - e.changedTouches[0].clientY;
     if (deltaY > SWIPE_THRESHOLD) collapse();
     else if (deltaY < -SWIPE_THRESHOLD) expand();
-  }, { passive: true });
+  }, { passive: true, capture: true });
 
   const listEl = document.getElementById('incident-list');
   if (listEl) {
