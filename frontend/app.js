@@ -2523,10 +2523,9 @@ function openHighlightStreetModal() {
   
   // Initialize map if not already done
   if (!highlightMap) {
-    highlightMap = L.map("highlight-map").setView(
-      [MELBOURNE_CBD.lat, MELBOURNE_CBD.lng],
-      MELBOURNE_CBD.zoom
-    );
+    const hlCenter = userLocation ? [userLocation.lat, userLocation.lng] : [MELBOURNE_CBD.lat, MELBOURNE_CBD.lng];
+    const hlZoom = userLocation ? 16 : MELBOURNE_CBD.zoom;
+    highlightMap = L.map("highlight-map").setView(hlCenter, hlZoom);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: "&copy; OpenStreetMap contributors",
@@ -3367,7 +3366,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     console.error(e);
   }
 
-  // Try to capture user location once for nearby alerts
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -3375,6 +3373,8 @@ window.addEventListener("DOMContentLoaded", async () => {
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
       };
+      if (map) map.setView([userLocation.lat, userLocation.lng], 16);
+      if (locationMap) locationMap.setView([userLocation.lat, userLocation.lng], 16);
       updateUserMarkers();
       checkNearbyAlerts();
       updateActiveUsersCount();
