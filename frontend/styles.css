@@ -2094,6 +2094,33 @@ body.header-collapsed .top-banner {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
+/* Exit fullscreen button — only visible when header is collapsed */
+.exit-fullscreen-btn {
+  display: none !important;
+}
+
+body.header-collapsed .exit-fullscreen-btn {
+  display: block !important;
+}
+
+.exit-fullscreen-btn a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #333;
+  text-decoration: none;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+
+.exit-fullscreen-btn a:hover {
+  background: #fff;
+  color: #111;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .app-header {

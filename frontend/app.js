@@ -3273,6 +3273,9 @@ function initCollapsibleHeader() {
     document.querySelector('.modal-overlay:not(.hidden)') ||
     document.querySelector('.street-note-overlay:not(.hidden)');
 
+  const isMapView = () =>
+    document.getElementById('view-map')?.classList.contains('active');
+
   const collapse = () => {
     if (document.body.classList.contains('header-collapsed')) return;
     document.body.classList.add('header-collapsed');
@@ -3285,6 +3288,29 @@ function initCollapsibleHeader() {
     setTimeout(() => { if (map) map.invalidateSize(); }, 360);
   };
 
+  // Exit-fullscreen button (Leaflet control on the map)
+  if (map) {
+    const exitBtn = L.control({ position: 'topleft' });
+    exitBtn.onAdd = function () {
+      const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control exit-fullscreen-btn');
+      container.innerHTML = `<a href="#" title="Exit fullscreen" role="button" aria-label="Exit fullscreen">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="4 14 10 14 10 20"></polyline>
+          <polyline points="20 10 14 10 14 4"></polyline>
+          <line x1="14" y1="10" x2="21" y2="3"></line>
+          <line x1="3" y1="21" x2="10" y2="14"></line>
+        </svg>
+      </a>`;
+      L.DomEvent.disableClickPropagation(container);
+      container.querySelector('a').addEventListener('click', (e) => {
+        e.preventDefault();
+        expand();
+      });
+      return container;
+    };
+    exitBtn.addTo(map);
+  }
+
   document.addEventListener('touchstart', (e) => {
     touchStartY = e.touches[0].clientY;
   }, { passive: true, capture: true });
@@ -3292,8 +3318,11 @@ function initCollapsibleHeader() {
   document.addEventListener('touchend', (e) => {
     if (isModalOpen()) return;
     const deltaY = touchStartY - e.changedTouches[0].clientY;
-    if (deltaY > SWIPE_THRESHOLD) collapse();
-    else if (deltaY < -SWIPE_THRESHOLD) expand();
+    if (deltaY > SWIPE_THRESHOLD) {
+      collapse();
+    } else if (deltaY < -SWIPE_THRESHOLD) {
+      if (!isMapView()) expand();
+    }
   }, { passive: true, capture: true });
 
   const listEl = document.getElementById('incident-list');
