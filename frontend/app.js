@@ -1778,6 +1778,9 @@ function initMap() {
   
   // Add notes toggle control
   addNotesToggle();
+
+  // Add locate-me button
+  addLocateControl();
   
   // Load and render admin street highlights
   fetchAdminStreetHighlights();
@@ -2055,6 +2058,52 @@ function addNotesToggle() {
   };
   
   toggle.addTo(map);
+}
+
+function addLocateControl() {
+  if (!map) return;
+
+  const locateCtrl = L.control({ position: 'topleft' });
+
+  locateCtrl.onAdd = function () {
+    const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control locate-me-btn');
+    container.innerHTML = `<a href="#" title="Go to my location" role="button" aria-label="Go to my location">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="4"/>
+        <line x1="12" y1="2" x2="12" y2="6"/>
+        <line x1="12" y1="18" x2="12" y2="22"/>
+        <line x1="2" y1="12" x2="6" y2="12"/>
+        <line x1="18" y1="12" x2="22" y2="12"/>
+      </svg>
+    </a>`;
+    L.DomEvent.disableClickPropagation(container);
+
+    container.querySelector('a').addEventListener('click', (e) => {
+      e.preventDefault();
+      if (userLocation) {
+        map.setView([userLocation.lat, userLocation.lng], 17);
+        updateUserMarkers();
+        return;
+      }
+      if (!navigator.geolocation) return;
+      const link = container.querySelector('a');
+      link.classList.add('locating');
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          map.setView([userLocation.lat, userLocation.lng], 17);
+          updateUserMarkers();
+          link.classList.remove('locating');
+        },
+        () => { link.classList.remove('locating'); },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
+
+    return container;
+  };
+
+  locateCtrl.addTo(map);
 }
 
 function openStreetNoteModal() {

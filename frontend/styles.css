@@ -2123,6 +2123,32 @@ body.header-collapsed .exit-fullscreen-btn {
   color: #111;
 }
 
+/* Locate-me GPS button */
+.locate-me-btn a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: #fff;
+  color: #2563eb;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.locate-me-btn a:hover {
+  background: #eff6ff;
+}
+
+.locate-me-btn a.locating svg {
+  animation: pulse-locate 1s ease-in-out infinite;
+}
+
+@keyframes pulse-locate {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .app-header {
