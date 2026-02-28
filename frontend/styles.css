@@ -2071,6 +2071,29 @@ body {
   transform: translateY(1px);
 }
 
+/* Collapsible header on scroll */
+#collapsible-header {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#collapsible-header > .collapsible-inner {
+  overflow: hidden;
+}
+
+body.header-collapsed #collapsible-header {
+  grid-template-rows: 0fr;
+}
+
+body.header-collapsed #map {
+  height: calc(100vh - 55px) !important;
+}
+
+body.header-collapsed .top-banner {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .app-header {

@@ -39,77 +39,81 @@
     </header>
 
     <main class="app-shell">
-      <section class="app-header">
-        <div class="header-left">
-          <div class="app-logo-box">
-            <div class="logo-icon">M</div>
-          </div>
-          <div class="header-text">
-            <h1 class="app-title">Community Map</h1>
-            <p class="app-subtitle">see it, post it, sort it</p>
-          </div>
-        </div>
-        <div class="header-right">
-          <a href="#" id="admin-button" class="admin-link">Admin</a>
-        </div>
-      </section>
-
-      <section class="app-navigation">
-        <div class="nav-left">
-          <div class="view-toggle" role="tablist">
-            <button
-              id="tab-map"
-              class="toggle-button active"
-              data-target="view-map"
-              type="button"
-            >
-              Map View
-            </button>
-            <button
-              id="tab-list"
-              class="toggle-button"
-              data-target="view-list"
-              type="button"
-            >
-              List View
-            </button>
-          </div>
-          <div class="filter-dropdown-wrapper">
-            <select id="quick-filter" class="filter-dropdown">
-              <option value="">All Reports</option>
-              <option value="high">High Urgency Only</option>
-              <option value="2">Last 2 Hours</option>
-              <option value="4">Last 4 Hours</option>
-            </select>
-          </div>
-        </div>
-        <div class="nav-right action-buttons">
-          <button id="notes-button" class="notes-button" type="button">
-            📝 St Notes
-          </button>
-          <button id="report-button" class="report-button" type="button">
-            + Report
-          </button>
-        </div>
-      </section>
-
-      <section class="live-updates-banner">
-        <div class="updates-content">
-          <div class="updates-header">
-            <span class="updates-icon">📢</span>
-            <strong class="updates-title">Live Updates</strong>
-          </div>
-          <div class="updates-info">
-            <div class="updates-scroll-container">
-              <span id="updates-text" class="updates-text">Loading...</span>
+      <div id="collapsible-header">
+        <div class="collapsible-inner">
+          <section class="app-header">
+            <div class="header-left">
+              <div class="app-logo-box">
+                <div class="logo-icon">M</div>
+              </div>
+              <div class="header-text">
+                <h1 class="app-title">Community Map</h1>
+                <p class="app-subtitle">see it, post it, sort it</p>
+              </div>
             </div>
-          </div>
+            <div class="header-right">
+              <a href="#" id="admin-button" class="admin-link">Admin</a>
+            </div>
+          </section>
+
+          <section class="app-navigation">
+            <div class="nav-left">
+              <div class="view-toggle" role="tablist">
+                <button
+                  id="tab-map"
+                  class="toggle-button active"
+                  data-target="view-map"
+                  type="button"
+                >
+                  Map View
+                </button>
+                <button
+                  id="tab-list"
+                  class="toggle-button"
+                  data-target="view-list"
+                  type="button"
+                >
+                  List View
+                </button>
+              </div>
+              <div class="filter-dropdown-wrapper">
+                <select id="quick-filter" class="filter-dropdown">
+                  <option value="">All Reports</option>
+                  <option value="high">High Urgency Only</option>
+                  <option value="2">Last 2 Hours</option>
+                  <option value="4">Last 4 Hours</option>
+                </select>
+              </div>
+            </div>
+            <div class="nav-right action-buttons">
+              <button id="notes-button" class="notes-button" type="button">
+                📝 St Notes
+              </button>
+              <button id="report-button" class="report-button" type="button">
+                + Report
+              </button>
+            </div>
+          </section>
+
+          <section class="live-updates-banner">
+            <div class="updates-content">
+              <div class="updates-header">
+                <span class="updates-icon">📢</span>
+                <strong class="updates-title">Live Updates</strong>
+              </div>
+              <div class="updates-info">
+                <div class="updates-scroll-container">
+                  <span id="updates-text" class="updates-text">Loading...</span>
+                </div>
+              </div>
+            </div>
+            <div id="active-users-badge" class="active-users-badge" role="button" tabindex="0">
+              <span class="users-icon">👥</span>
+              <span id="active-users-text" class="active-users-text">0 people active on the map, tap to chat</span>
+            </div>
+          </section>
         </div>
-        <div id="active-users-badge" class="active-users-badge" role="button" tabindex="0">
-          <span class="users-icon">👥</span>
-          <span id="active-users-text" class="active-users-text">0 people active on the map, tap to chat</span>
-        </div>
-      </section>
+      </div>
 
       <section id="alert-banner" class="alert-banner hidden"></section>
 

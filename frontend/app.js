@@ -3264,6 +3264,52 @@ function initChat() {
   }
 }
 
+function initCollapsibleHeader() {
+  const SWIPE_THRESHOLD = 45;
+  let touchStartY = 0;
+
+  const isModalOpen = () =>
+    document.querySelector('.modal:not(.hidden)') ||
+    document.querySelector('.modal-overlay:not(.hidden)') ||
+    document.querySelector('.street-note-overlay:not(.hidden)') ||
+    document.querySelector('.chat-modal-content');
+
+  const collapse = () => {
+    if (document.body.classList.contains('header-collapsed')) return;
+    document.body.classList.add('header-collapsed');
+    setTimeout(() => { if (map) map.invalidateSize(); }, 360);
+  };
+
+  const expand = () => {
+    if (!document.body.classList.contains('header-collapsed')) return;
+    document.body.classList.remove('header-collapsed');
+    setTimeout(() => { if (map) map.invalidateSize(); }, 360);
+  };
+
+  document.addEventListener('touchstart', (e) => {
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (isModalOpen()) return;
+    const deltaY = touchStartY - e.changedTouches[0].clientY;
+    if (deltaY > SWIPE_THRESHOLD) collapse();
+    else if (deltaY < -SWIPE_THRESHOLD) expand();
+  }, { passive: true });
+
+  const listEl = document.getElementById('incident-list');
+  if (listEl) {
+    let lastScroll = 0;
+    listEl.addEventListener('scroll', () => {
+      if (isModalOpen()) return;
+      const st = listEl.scrollTop;
+      if (st > lastScroll + 8) collapse();
+      else if (st < lastScroll - 8) expand();
+      lastScroll = st;
+    }, { passive: true });
+  }
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
   // Load user reactions from localStorage
   loadUserReactions();
@@ -3283,6 +3329,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initChat(); // Initialize chat functionality
   initHighlightStreetModal(); // Initialize highlight street modal
   initStreetNoteModal(); // Initialize street notes modal
+  initCollapsibleHeader(); // Fold header on scroll
 
   try {
     await fetchIncidents();
