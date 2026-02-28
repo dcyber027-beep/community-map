@@ -16,7 +16,7 @@ Run these commands in your terminal (PowerShell):
 
 ```powershell
 # Navigate to project root
-cd C:\Users\Cyber\Desktop\EmergentApp1
+cd C:\Users\Cyber\Desktop\melbCommunity
 
 # Check what changed
 git status
