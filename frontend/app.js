@@ -3386,13 +3386,53 @@ function initCollapsibleHeader() {
   }
 }
 
+async function waitForBackend() {
+  const overlay = document.getElementById('loading-overlay');
+  const msgEl = document.getElementById('loading-message');
+  const FAST_TIMEOUT = 2500;
+
+  const ping = (timeout) =>
+    Promise.race([
+      fetch(`${API_BASE}/`, { method: 'GET', cache: 'no-store' }).then(r => r.ok),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeout))
+    ]);
+
+  try {
+    await ping(FAST_TIMEOUT);
+    return;
+  } catch (_) {
+    // Backend is slow/sleeping — show the loading overlay
+  }
+
+  overlay.style.display = 'flex';
+
+  const messages = [
+    'Waking up the server...',
+    'Server is starting up, hang tight...',
+    'Almost there, loading data...',
+    'Still warming up, just a moment...',
+  ];
+  let attempt = 0;
+
+  while (true) {
+    if (msgEl) msgEl.textContent = messages[Math.min(attempt, messages.length - 1)];
+    attempt++;
+    try {
+      await ping(5000);
+      break;
+    } catch (_) {
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+
+  if (msgEl) msgEl.textContent = 'Ready!';
+  overlay.classList.add('fade-out');
+  setTimeout(() => { overlay.style.display = 'none'; }, 600);
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
-  // Load user reactions from localStorage
   loadUserReactions();
-  
-  // Fetch and display live updates content
-  await fetchLiveUpdates();
-  
+
   initMap();
   initLocationMap();
   initViewToggle();
@@ -3402,15 +3442,19 @@ window.addEventListener("DOMContentLoaded", async () => {
   initChipSelection("urgency-chips");
   initAdminModal();
   setupEditForm();
-  initChat(); // Initialize chat functionality
-  initHighlightStreetModal(); // Initialize highlight street modal
-  initStreetNoteModal(); // Initialize street notes modal
-  initCollapsibleHeader(); // Fold header on scroll
+  initChat();
+  initHighlightStreetModal();
+  initStreetNoteModal();
+  initCollapsibleHeader();
+
+  await waitForBackend();
+
+  await fetchLiveUpdates();
 
   try {
     await fetchIncidents();
-    await fetchAdminStreetHighlights(); // Load admin street highlights
-    await checkAndShowWelcomeNotice(); // Check and show welcome notice if needed
+    await fetchAdminStreetHighlights();
+    await checkAndShowWelcomeNotice();
   } catch (e) {
     console.error(e);
   }
