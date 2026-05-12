@@ -608,6 +608,137 @@ body {
   font-weight: 600;
 }
 
+/* Duration slider + forever toggle */
+.duration-control {
+  padding: 6px 2px 0;
+}
+
+.duration-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: linear-gradient(to right, #1E88E5 0%, #1E88E5 var(--fill, 16%), #e5e7eb var(--fill, 16%), #e5e7eb 100%);
+  border-radius: 3px;
+  outline: none;
+  transition: opacity 0.2s;
+  cursor: pointer;
+}
+
+.duration-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid #1E88E5;
+  box-shadow: 0 1px 4px rgba(30, 136, 229, 0.35);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.duration-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+.duration-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid #1E88E5;
+  box-shadow: 0 1px 4px rgba(30, 136, 229, 0.35);
+  cursor: pointer;
+}
+
+.duration-slider:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.duration-ticks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 0.65rem;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.forever-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #f9fafb;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.forever-toggle:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.forever-toggle input[type="checkbox"] {
+  accent-color: #1E88E5;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.forever-toggle-text {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.forever-hint {
+  font-weight: 400;
+  font-size: 0.7rem;
+  color: #9ca3af;
+  display: block;
+  margin-top: 2px;
+}
+
+.forever-toggle input[type="checkbox"]:checked + .forever-toggle-text {
+  color: #1E88E5;
+}
+
+/* Inline admin delete button on note cards/popups */
+.note-admin-delete {
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.note-admin-delete:hover {
+  background: #dc2626;
+}
+
+.note-permanent-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 0.35rem;
+  letter-spacing: 0.02em;
+}
+
 .street-note-image-input {
   width: 100%;
   font-size: 0.8125rem;

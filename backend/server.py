@@ -561,43 +561,55 @@ class StreetNoteCreate(BaseModel):
     location_text: Optional[str] = ""
     image_url: Optional[str] = None
     emoji: Optional[str] = None
+    duration_hours: Optional[int] = 12
+    forever: Optional[bool] = False
 
 @api_router.get("/street-notes")
 async def get_street_notes():
     """
-    Get all non-expired street notes (auto-cleanup of expired ones)
+    Get all non-expired street notes. Notes with expires_at == None are permanent
+    and only deletable by admins. Auto-cleanup of expired (non-permanent) notes.
     """
-    now = datetime.now(timezone.utc)
-    
-    # Delete expired notes
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Only delete notes that have a real expires_at in the past (skip forever notes)
     await db.street_notes.delete_many({
-        "expires_at": {"$lt": now.isoformat()}
+        "expires_at": {"$ne": None, "$lt": now_iso}
     })
-    
-    notes = await db.street_notes.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
-    
+
+    notes = await db.street_notes.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
     # Ensure timestamps are strings
     for note in notes:
         if isinstance(note.get('created_at'), datetime):
             note['created_at'] = note['created_at'].isoformat()
         if isinstance(note.get('expires_at'), datetime):
             note['expires_at'] = note['expires_at'].isoformat()
-    
+
     return notes
 
 @api_router.post("/street-notes")
 async def create_street_note(note_data: StreetNoteCreate):
     """
-    Create a new street note (auto-expires in 24 hours)
+    Create a new street note. User can choose duration (1-72 hours) or 'forever'.
     """
     if not note_data.text or not note_data.text.strip():
         raise HTTPException(status_code=400, detail="Note text is required")
     if len(note_data.text) > 150:
         raise HTTPException(status_code=400, detail="Note text must be 150 characters or less")
-    
+
     now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(hours=24)
-    
+
+    if note_data.forever:
+        expires_at_iso = None
+    else:
+        hours = note_data.duration_hours if note_data.duration_hours is not None else 12
+        if hours < 1:
+            hours = 1
+        if hours > 72:
+            hours = 72
+        expires_at_iso = (now + timedelta(hours=hours)).isoformat()
+
     note_doc = {
         "id": str(uuid.uuid4()),
         "text": note_data.text.strip(),
@@ -606,14 +618,25 @@ async def create_street_note(note_data: StreetNoteCreate):
         "location_text": (note_data.location_text or "").strip(),
         "image_url": note_data.image_url or "",
         "emoji": (note_data.emoji or "").strip() or None,
+        "forever": bool(note_data.forever),
         "created_at": now.isoformat(),
-        "expires_at": expires_at.isoformat()
+        "expires_at": expires_at_iso
     }
-    
+
     await db.street_notes.insert_one(note_doc)
     note_doc.pop("_id", None)
-    
+
     return {"success": True, "note": note_doc}
+
+@api_router.delete("/admin/street-notes/{note_id}")
+async def delete_street_note(note_id: str):
+    """
+    Delete a street note (admin only).
+    """
+    result = await db.street_notes.delete_one({"id": note_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return {"success": True}
 
 # Welcome Popup Notice (first-time visitor notice)
 @api_router.get("/welcome-notice")

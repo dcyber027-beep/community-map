@@ -57,6 +57,35 @@ const EMOJI_SHORTCUTS = [
 ];
 let selectedNoteEmoji = null;
 let lastAutofilledPhrase = null;
+let noteDurationHours = 12;
+let noteForever = false;
+
+function formatDurationText(hours) {
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`;
+  const days = Math.floor(hours / 24);
+  const remH = hours % 24;
+  if (remH === 0) return `${days} day${days === 1 ? "" : "s"}`;
+  return `${days}d ${remH}h`;
+}
+
+function formatRemainingTime(expiresAt) {
+  if (!expiresAt) return "Permanent";
+  const expiry = new Date(expiresAt).getTime();
+  const diffMs = expiry - Date.now();
+  if (diffMs <= 0) return "Expired";
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 60) return `expires in ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `expires in ${diffH}h`;
+  const days = Math.floor(diffH / 24);
+  const remH = diffH % 24;
+  return remH === 0 ? `expires in ${days}d` : `expires in ${days}d ${remH}h`;
+}
+
+async function deleteStreetNoteById(noteId) {
+  const res = await fetch(`${API_BASE}/admin/street-notes/${noteId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete street note");
+}
 
 // Load user reactions from localStorage on page load
 function loadUserReactions() {
@@ -370,9 +399,10 @@ function renderList() {
     title.className = "incident-title";
     title.textContent = "Street Note";
 
+    const isForeverNote = note.forever || !note.expires_at;
     const metaLine = document.createElement("div");
     metaLine.className = "incident-meta";
-    metaLine.textContent = `${humanTimeAgo(note.created_at)} • Expires in 24h`;
+    metaLine.textContent = `${humanTimeAgo(note.created_at)} • ${isForeverNote ? "Permanent" : formatRemainingTime(note.expires_at)}`;
 
     const location = document.createElement("div");
     location.className = "incident-location";
@@ -433,14 +463,16 @@ function renderList() {
           const locationHtml = note.location_text
             ? `<div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.5rem;">📍 ${note.location_text}</div>`
             : "";
+          const expText = isForeverNote ? "Permanent" : formatRemainingTime(note.expires_at);
+          const pBadge = isForeverNote ? '<span class="note-permanent-badge">PERMANENT</span>' : '';
           L.popup()
             .setLatLng([note.latitude, note.longitude])
             .setContent(`
               <div style="max-width: 240px; padding: 0.25rem;">
                 ${imageHtml}
                 ${locationHtml}
-                <div style="font-size: 0.9375rem; color: #1f2937; line-height: 1.5; margin-bottom: 0.5rem;">${note.text}</div>
-                <div style="font-size: 0.75rem; color: #9ca3af;">${humanTimeAgo(note.created_at)} &middot; expires in 24h</div>
+                <div style="font-size: 0.9375rem; color: #1f2937; line-height: 1.5; margin-bottom: 0.5rem;">${note.text}${pBadge}</div>
+                <div style="font-size: 0.75rem; color: #9ca3af;">${humanTimeAgo(note.created_at)} &middot; ${expText}</div>
               </div>
             `)
             .openOn(map);
@@ -448,6 +480,23 @@ function renderList() {
       }
     });
     actions.appendChild(viewBtn);
+
+    if (isAdminLoggedIn) {
+      const delBtn = document.createElement("button");
+      delBtn.className = "note-admin-delete";
+      delBtn.type = "button";
+      delBtn.textContent = "🗑️ Delete";
+      delBtn.addEventListener("click", async () => {
+        if (!confirm("Delete this street note?")) return;
+        try {
+          await deleteStreetNoteById(note.id);
+          await fetchStreetNotes();
+        } catch (err) {
+          alert("Failed to delete note.");
+        }
+      });
+      actions.appendChild(delBtn);
+    }
 
     card.appendChild(actions);
     container.appendChild(card);
@@ -1347,6 +1396,7 @@ async function renderAdminDashboard() {
       emptyMsg.className = "admin-empty";
       emptyMsg.textContent = "No incidents in the last 6 hours.";
       dashboard.appendChild(emptyMsg);
+      await renderAdminStreetNotesSection(dashboard);
       adminBody.innerHTML = "";
       adminBody.appendChild(dashboard);
       return;
@@ -1367,6 +1417,9 @@ async function renderAdminDashboard() {
     
     // Add Street Highlights section
     await renderAdminStreetHighlightsSection(dashboard);
+
+    // Add Street Notes section (after incidents and highlights)
+    await renderAdminStreetNotesSection(dashboard);
     
     adminBody.innerHTML = "";
     adminBody.appendChild(dashboard);
@@ -1635,6 +1688,101 @@ async function renderAdminStreetHighlightsSection(dashboard) {
   }
 }
 
+async function renderAdminStreetNotesSection(dashboard) {
+  try {
+    const res = await fetch(`${API_BASE}/street-notes`);
+    if (!res.ok) return;
+    const notes = await res.json();
+
+    const section = document.createElement("div");
+    section.className = "admin-notes-section";
+    section.style.cssText = "margin-top: 2rem; padding-top: 2rem; border-top: 2px solid #e5e7eb;";
+
+    const header = document.createElement("div");
+    header.style.cssText = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;";
+
+    const title = document.createElement("h2");
+    title.textContent = "Street Notes";
+    title.style.cssText = "font-size: 1.25rem; font-weight: 600; color: #1f2937; margin: 0;";
+
+    const foreverCount = notes.filter(n => n.forever || !n.expires_at).length;
+    const count = document.createElement("div");
+    count.textContent = `${notes.length} note${notes.length !== 1 ? "s" : ""}${foreverCount ? ` (${foreverCount} permanent)` : ""}`;
+    count.style.cssText = "font-size: 0.875rem; color: #6b7280;";
+
+    header.appendChild(title);
+    header.appendChild(count);
+    section.appendChild(header);
+
+    if (!notes.length) {
+      const empty = document.createElement("div");
+      empty.textContent = "No street notes posted.";
+      empty.style.cssText = "font-size: 0.875rem; color: #9ca3af; padding: 1rem; text-align: center; background: #f9fafb; border-radius: 8px;";
+      section.appendChild(empty);
+      dashboard.appendChild(section);
+      return;
+    }
+
+    const list = document.createElement("div");
+    list.className = "admin-notes-list";
+    list.style.cssText = "display: flex; flex-direction: column; gap: 0.75rem;";
+
+    notes.forEach((note) => {
+      const isForeverN = note.forever || !note.expires_at;
+      const expText = isForeverN ? "Permanent" : formatRemainingTime(note.expires_at);
+      const emojiIcon = note.emoji || "📝";
+      const imgHtml = note.image_url
+        ? `<img src="${note.image_url}" style="max-width:120px;max-height:80px;object-fit:cover;border-radius:6px;margin-top:0.5rem;border:1px solid #e5e7eb;" />`
+        : "";
+      const locHtml = note.location_text
+        ? `<div style="font-size:0.75rem;color:#6b7280;">📍 ${note.location_text}</div>`
+        : "";
+      const badge = isForeverN ? '<span class="note-permanent-badge">PERMANENT</span>' : '';
+
+      const card = document.createElement("div");
+      card.style.cssText = "background: #fff; border: 1px solid #e5e7eb; border-left: 4px solid #1E88E5; border-radius: 8px; padding: 0.875rem;";
+      card.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">
+              <span style="font-size:1.25rem;">${emojiIcon}</span>
+              <strong style="font-size:0.9rem;color:#1f2937;">Street Note</strong>
+              ${badge}
+            </div>
+            <div style="font-size:0.875rem;color:#374151;margin-bottom:0.25rem;">${note.text}</div>
+            ${locHtml}
+            <div style="font-size:0.7rem;color:#9ca3af;margin-top:0.25rem;">${humanTimeAgo(note.created_at)} • ${expText}</div>
+            ${imgHtml}
+          </div>
+          <button type="button" class="admin-delete-note-btn" data-note-id="${note.id}" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:0.375rem 0.75rem;font-size:0.75rem;font-weight:600;cursor:pointer;flex-shrink:0;">
+            Delete
+          </button>
+        </div>
+      `;
+      list.appendChild(card);
+    });
+
+    section.appendChild(list);
+
+    list.querySelectorAll(".admin-delete-note-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Delete this street note?")) return;
+        try {
+          await deleteStreetNoteById(btn.dataset.noteId);
+          await fetchStreetNotes();
+          await renderAdminDashboard();
+        } catch (e) {
+          alert("Failed to delete note.");
+        }
+      });
+    });
+
+    dashboard.appendChild(section);
+  } catch (e) {
+    console.error("Failed to load admin street notes:", e);
+  }
+}
+
 function openEditModal(incident) {
   const editModal = document.getElementById("edit-modal");
   const editForm = document.getElementById("edit-form");
@@ -1727,6 +1875,9 @@ function setupAdminLoginForm() {
       await verifyAdmin(account, pin);
       isAdminLoggedIn = true;
       await renderAdminDashboard();
+      // Refresh public views so admin delete buttons appear on notes
+      renderList();
+      renderStreetNotes();
     } catch (err) {
       errorEl.textContent = "Invalid account or PIN.";
     }
@@ -2036,23 +2187,46 @@ function renderStreetNotes() {
     });
     
     const marker = L.marker([note.latitude, note.longitude], { icon });
-    
+
     const timeAgo = humanTimeAgo(note.created_at);
+    const isForever = note.forever || !note.expires_at;
+    const expiryText = isForever ? "Permanent" : formatRemainingTime(note.expires_at);
+    const permBadge = isForever ? '<span class="note-permanent-badge">PERMANENT</span>' : '';
     const imageHtml = note.image_url
       ? `<div style="margin-bottom: 0.5rem;"><img src="${note.image_url}" alt="Street note image" style="display:block; width:100%; max-width:200px; max-height:140px; object-fit:cover; border-radius: 6px; border: 1px solid #dbeafe;" /></div>`
       : "";
     const locationHtml = note.location_text
       ? `<div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.5rem;">📍 ${note.location_text}</div>`
       : "";
+    const adminDeleteHtml = isAdminLoggedIn
+      ? `<div style="margin-top: 0.5rem;"><button type="button" class="note-admin-delete" data-note-id="${note.id}">🗑️ Delete note</button></div>`
+      : "";
     marker.bindPopup(`
       <div style="max-width: 220px; padding: 0.25rem;">
         ${imageHtml}
         ${locationHtml}
-        <div style="font-size: 0.9375rem; color: #1f2937; line-height: 1.5; margin-bottom: 0.5rem;">${note.text}</div>
-        <div style="font-size: 0.75rem; color: #9ca3af;">${timeAgo} &middot; expires in 24h</div>
+        <div style="font-size: 0.9375rem; color: #1f2937; line-height: 1.5; margin-bottom: 0.5rem;">${note.text}${permBadge}</div>
+        <div style="font-size: 0.75rem; color: #9ca3af;">${timeAgo} &middot; ${expiryText}</div>
+        ${adminDeleteHtml}
       </div>
     `);
-    
+
+    marker.on("popupopen", (e) => {
+      const btn = e.popup.getElement().querySelector(".note-admin-delete");
+      if (btn) {
+        btn.addEventListener("click", async () => {
+          if (!confirm("Delete this street note?")) return;
+          try {
+            await deleteStreetNoteById(note.id);
+            map.closePopup();
+            await fetchStreetNotes();
+          } catch (err) {
+            alert("Failed to delete note.");
+          }
+        });
+      }
+    });
+
     streetNotesLayer.addLayer(marker);
   });
 }
@@ -2155,6 +2329,19 @@ function openStreetNoteModal() {
   selectedNoteEmoji = null;
   lastAutofilledPhrase = null;
   renderEmojiShortcutBar();
+
+  noteDurationHours = 12;
+  noteForever = false;
+  const durSlider = document.getElementById("street-note-duration");
+  const durDisplay = document.getElementById("duration-display");
+  const foreverCb = document.getElementById("street-note-forever");
+  if (durSlider) {
+    durSlider.value = 12;
+    durSlider.disabled = false;
+    durSlider.style.setProperty("--fill", `${((12 - 1) / (72 - 1)) * 100}%`);
+  }
+  if (durDisplay) durDisplay.textContent = "12 hours";
+  if (foreverCb) foreverCb.checked = false;
   
   // Get user location for display
   const locationDisplay = document.getElementById("street-note-location");
@@ -2319,7 +2506,9 @@ async function submitStreetNote() {
         longitude: lng,
         location_text: locationText,
         image_url: imageUrl,
-        emoji: selectedNoteEmoji || null
+        emoji: selectedNoteEmoji || null,
+        duration_hours: noteForever ? null : noteDurationHours,
+        forever: noteForever
       }),
     });
     
@@ -2426,6 +2615,30 @@ function initStreetNoteModal() {
     });
   }
   
+  // Duration slider
+  const durSlider = document.getElementById("street-note-duration");
+  const durDisplay = document.getElementById("duration-display");
+  if (durSlider) {
+    durSlider.addEventListener("input", () => {
+      const hours = parseInt(durSlider.value, 10) || 12;
+      noteDurationHours = hours;
+      if (durDisplay) durDisplay.textContent = formatDurationText(hours);
+      durSlider.style.setProperty("--fill", `${((hours - 1) / (72 - 1)) * 100}%`);
+    });
+  }
+
+  // Forever toggle
+  const foreverCb = document.getElementById("street-note-forever");
+  if (foreverCb) {
+    foreverCb.addEventListener("change", () => {
+      noteForever = foreverCb.checked;
+      if (durSlider) durSlider.disabled = noteForever;
+      if (durDisplay) {
+        durDisplay.textContent = noteForever ? "Forever" : formatDurationText(noteDurationHours);
+      }
+    });
+  }
+
   // Backdrop click
   const modal = document.getElementById("street-note-modal");
   if (modal) {

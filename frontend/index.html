@@ -461,6 +461,22 @@
             <div id="emoji-shortcut-bar" class="emoji-shortcut-bar"></div>
           </div>
           <div class="street-note-field">
+            <label class="street-note-label">⏳ How long should this last? <span class="street-note-hint" id="duration-display">12 hours</span></label>
+            <div class="duration-control">
+              <input id="street-note-duration" type="range" min="1" max="72" step="1" value="12" class="duration-slider" />
+              <div class="duration-ticks">
+                <span>1h</span>
+                <span>1d</span>
+                <span>2d</span>
+                <span>3d</span>
+              </div>
+            </div>
+            <label class="forever-toggle">
+              <input type="checkbox" id="street-note-forever" />
+              <span class="forever-toggle-text">♾️ Keep this note forever <span class="forever-hint">(only an admin can remove it)</span></span>
+            </label>
+          </div>
+          <div class="street-note-field">
             <label class="street-note-label">📷 Optional image</label>
             <input id="street-note-image" class="street-note-image-input" type="file" accept="image/*" />
             <div id="street-note-image-meta" class="street-note-image-meta">No image selected</div>
