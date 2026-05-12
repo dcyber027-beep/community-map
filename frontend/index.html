@@ -176,11 +176,14 @@
     <!-- Report Modal -->
     <div id="report-modal" class="modal hidden" aria-hidden="true">
       <div class="modal-backdrop"></div>
-      <div class="modal-content">
-        <header class="modal-header">
-          <h2>Report Incident</h2>
-          <button id="report-close" class="icon-button" type="button">
-            ✕
+      <div class="modal-content report-modal-content">
+        <header class="modal-header report-modal-header">
+          <div>
+            <h2>🚨 Report Incident</h2>
+            <p class="modal-subtitle">Help your community stay informed — your report is anonymous to other users.</p>
+          </div>
+          <button id="report-close" class="icon-button" type="button" aria-label="Close">
+            &times;
           </button>
         </header>
         <div class="modal-body">
@@ -374,10 +377,10 @@
     <!-- Edit Incident Modal -->
     <div id="edit-modal" class="modal hidden" aria-hidden="true">
       <div class="modal-backdrop"></div>
-      <div class="modal-content">
-        <header class="modal-header">
-          <h2>Edit Incident</h2>
-          <button id="edit-close" class="icon-button" type="button">✕</button>
+      <div class="modal-content report-modal-content">
+        <header class="modal-header report-modal-header">
+          <h2>✏️ Edit Incident</h2>
+          <button id="edit-close" class="icon-button" type="button" aria-label="Close">&times;</button>
         </header>
         <div class="modal-body" id="edit-body">
           <form id="edit-form">
@@ -412,10 +415,10 @@
     <!-- Detail Modal -->
     <div id="detail-modal" class="modal hidden" aria-hidden="true">
       <div class="modal-backdrop"></div>
-      <div class="modal-content">
-        <header class="modal-header">
+      <div class="modal-content report-modal-content">
+        <header class="modal-header report-modal-header">
           <h2 id="detail-title"></h2>
-          <button id="detail-close" class="icon-button" type="button">✕</button>
+          <button id="detail-close" class="icon-button" type="button" aria-label="Close">&times;</button>
         </header>
         <div class="modal-body" id="detail-body"></div>
       </div>
@@ -461,19 +464,24 @@
             <div id="emoji-shortcut-bar" class="emoji-shortcut-bar"></div>
           </div>
           <div class="street-note-field">
-            <label class="street-note-label">⏳ How long should this last? <span class="street-note-hint" id="duration-display">12 hours</span></label>
-            <div class="duration-control">
-              <input id="street-note-duration" type="range" min="1" max="72" step="1" value="12" class="duration-slider" />
-              <div class="duration-ticks">
-                <span>1h</span>
-                <span>1d</span>
-                <span>2d</span>
-                <span>3d</span>
+            <label class="street-note-label">⏳ How long should this last?</label>
+            <div class="duration-player">
+              <div class="duration-slider-wrap">
+                <div class="duration-bubble" id="duration-bubble">12 hours</div>
+                <input id="street-note-duration" type="range" min="1" max="72" step="1" value="12" class="duration-slider" />
+              </div>
+              <div class="duration-endpoints">
+                <span>1 hour</span>
+                <span>3 days</span>
               </div>
             </div>
             <label class="forever-toggle">
-              <input type="checkbox" id="street-note-forever" />
-              <span class="forever-toggle-text">♾️ Keep this note forever <span class="forever-hint">(only an admin can remove it)</span></span>
+              <div class="forever-toggle-info">
+                <div class="forever-toggle-text">♾️ Keep forever</div>
+                <div class="forever-hint">Only an admin can remove it</div>
+              </div>
+              <input type="checkbox" id="street-note-forever" class="forever-toggle-input" />
+              <span class="forever-toggle-switch" aria-hidden="true"></span>
             </label>
           </div>
           <div class="street-note-field">

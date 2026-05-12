@@ -2333,14 +2333,20 @@ function openStreetNoteModal() {
   noteDurationHours = 12;
   noteForever = false;
   const durSlider = document.getElementById("street-note-duration");
-  const durDisplay = document.getElementById("duration-display");
+  const durBubble = document.getElementById("duration-bubble");
+  const durPlayer = document.querySelector(".duration-player");
   const foreverCb = document.getElementById("street-note-forever");
   if (durSlider) {
     durSlider.value = 12;
     durSlider.disabled = false;
-    durSlider.style.setProperty("--fill", `${((12 - 1) / (72 - 1)) * 100}%`);
+    const pct = `${((12 - 1) / (72 - 1)) * 100}%`;
+    durSlider.style.setProperty("--fill", pct);
+    if (durBubble) {
+      durBubble.style.setProperty("--fill", pct);
+      durBubble.textContent = "12 hours";
+    }
   }
-  if (durDisplay) durDisplay.textContent = "12 hours";
+  if (durPlayer) durPlayer.classList.remove("is-forever");
   if (foreverCb) foreverCb.checked = false;
   
   // Get user location for display
@@ -2617,13 +2623,18 @@ function initStreetNoteModal() {
   
   // Duration slider
   const durSlider = document.getElementById("street-note-duration");
-  const durDisplay = document.getElementById("duration-display");
+  const durBubble = document.getElementById("duration-bubble");
+  const durPlayer = document.querySelector(".duration-player");
   if (durSlider) {
     durSlider.addEventListener("input", () => {
       const hours = parseInt(durSlider.value, 10) || 12;
       noteDurationHours = hours;
-      if (durDisplay) durDisplay.textContent = formatDurationText(hours);
-      durSlider.style.setProperty("--fill", `${((hours - 1) / (72 - 1)) * 100}%`);
+      const pct = `${((hours - 1) / (72 - 1)) * 100}%`;
+      durSlider.style.setProperty("--fill", pct);
+      if (durBubble) {
+        durBubble.style.setProperty("--fill", pct);
+        durBubble.textContent = formatDurationText(hours);
+      }
     });
   }
 
@@ -2633,9 +2644,7 @@ function initStreetNoteModal() {
     foreverCb.addEventListener("change", () => {
       noteForever = foreverCb.checked;
       if (durSlider) durSlider.disabled = noteForever;
-      if (durDisplay) {
-        durDisplay.textContent = noteForever ? "Forever" : formatDurationText(noteDurationHours);
-      }
+      if (durPlayer) durPlayer.classList.toggle("is-forever", noteForever);
     });
   }
 
