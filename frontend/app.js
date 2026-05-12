@@ -1931,9 +1931,10 @@ function initMap() {
     [MELBOURNE_CBD.lat, MELBOURNE_CBD.lng],
     MELBOURNE_CBD.zoom
   );
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: "&copy; OpenStreetMap contributors",
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+    maxZoom: 20,
+    subdomains: "abcd",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
   }).addTo(map);
   mainMarkersLayer = L.layerGroup().addTo(map);
   adminHighlightsLayer = L.layerGroup().addTo(map);
@@ -2087,9 +2088,10 @@ function initLocationMap() {
     [MELBOURNE_CBD.lat, MELBOURNE_CBD.lng],
     MELBOURNE_CBD.zoom
   );
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: "&copy; OpenStreetMap contributors",
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+    maxZoom: 20,
+    subdomains: "abcd",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
   }).addTo(locationMap);
 
   locationMap.on("click", (e) => {
@@ -2874,9 +2876,10 @@ function openHighlightStreetModal() {
     const hlCenter = userLocation ? [userLocation.lat, userLocation.lng] : [MELBOURNE_CBD.lat, MELBOURNE_CBD.lng];
     const hlZoom = userLocation ? 16 : MELBOURNE_CBD.zoom;
     highlightMap = L.map("highlight-map").setView(hlCenter, hlZoom);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors",
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+      maxZoom: 20,
+      subdomains: "abcd",
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
     }).addTo(highlightMap);
     
     // Add click handler to place pins
