@@ -3263,14 +3263,31 @@ async function fetchWelcomeNotice() {
     // Set default content if fetch fails
     if (!welcomeNoticeContent) {
       welcomeNoticeContent = `<h2>Welcome to Melbourne Community Map</h2>
-<p>This interactive map helps you stay informed about community incidents and safety in Melbourne.</p>
+<p>Your friendly neighbourhood map for staying informed and helping each other out around Melbourne.</p>
+
+<h3>🚨 Report Incidents</h3>
+<p>Spotted something the community should know about? Tap <strong>Report Incident</strong> to flag it on the map. Description is optional.</p>
+
+<h3>📝 Street Notes</h3>
+<p>Share quick tips with your neighbours — where the nearest toilet is, a milk-tea deal, a busker worth checking out, and more.</p>
 <ul>
-<li>📍 Report incidents you've witnessed or experienced</li>
-<li>🗺️ View recent community reports on the map</li>
-<li>💬 Join the community chat to share updates</li>
-<li>📍 Check admin-highlighted streets for important information</li>
+<li>Tap a quick-shortcut emoji to auto-fill your note (🚽 ☕ 🧋 🍜 🅿️ 🎵 ❤️ 😊)</li>
+<li>Choose how long it lasts — from 1 hour up to 3 days, or keep it forever</li>
 </ul>
-<p>Your reports help keep the community safe. Stay alert and report responsibly.</p>`;
+
+<h3>🗺️ Map Tricks</h3>
+<ul>
+<li>Tap the blue crosshair to centre the map on you</li>
+<li>Swipe up to hide the header for a fullscreen map view</li>
+</ul>
+
+<h3>💬 Live Updates & Chat</h3>
+<p>Tap the active users badge to join the community group chat — messages clear every 24 hours.</p>
+
+<h3>📲 Install it</h3>
+<p>Add this to your home screen for a native-app feel.</p>
+
+<p style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; font-size: 0.85rem; color: #6b7280;">In an emergency, always call <strong>000</strong> first. This app is for community awareness only.</p>`;
     }
   }
 }
@@ -3416,14 +3433,33 @@ async function showEditWelcomeNoticeModal() {
   
   // Use fetched content or default if empty
   const defaultContent = `<h2>Welcome to Melbourne Community Map</h2>
-<p>This interactive map helps you stay informed about community incidents and safety in Melbourne.</p>
+<p>Your friendly neighbourhood map for staying informed and helping each other out around Melbourne.</p>
+
+<h3>🚨 Report Incidents</h3>
+<p>Spotted something the community should know about? Tap <strong>Report Incident</strong> to flag it on the map. Description is optional — share as much or as little as you like.</p>
+
+<h3>📝 Street Notes</h3>
+<p>Share quick tips with your neighbours — where the nearest toilet is, a milk-tea deal, a busker worth checking out, or just a thought about the moment.</p>
 <ul>
-<li>📍 Report incidents you've witnessed or experienced</li>
-<li>🗺️ View recent community reports on the map</li>
-<li>💬 Join the community chat to share updates</li>
-<li>📍 Check admin-highlighted streets for important information</li>
+<li>Tap a quick-shortcut emoji to auto-fill your note (🚽 ☕ 🧋 🍜 🅿️ 🎵 ❤️ 😊 and more)</li>
+<li>Choose how long it lasts — from <strong>1 hour</strong> up to <strong>3 days</strong>, or keep it <strong>forever</strong></li>
+<li>Add an optional image; everything else is optional too</li>
 </ul>
-<p>Your reports help keep the community safe. Stay alert and report responsibly.</p>`;
+
+<h3>🗺️ Map Tricks</h3>
+<ul>
+<li>Tap the blue crosshair button to centre the map on your current location</li>
+<li>Swipe up anywhere to hide the header for a fullscreen map view — tap the minimise button to bring it back</li>
+<li>Streets highlighted by admins flag helpful context like poor lighting or crowded areas</li>
+</ul>
+
+<h3>💬 Live Updates & Community Chat</h3>
+<p>Tap the active users badge in the Live Updates banner to drop into the community group chat. Messages clear every 24 hours.</p>
+
+<h3>📲 Install on your home screen</h3>
+<p>For the full experience, add this app to your home screen — it opens like a native app, no browser bars.</p>
+
+<p style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; font-size: 0.85rem; color: #6b7280;">In an emergency, always call <strong>000</strong> first. This app is for community awareness only.</p>`;
   
   textarea.value = welcomeNoticeContent || defaultContent;
   enabledCheckbox.checked = welcomeNoticeEnabled !== false;

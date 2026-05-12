@@ -409,7 +409,7 @@ async def get_live_updates():
     # Try to get from database, if not found use default
     content = await db.live_updates.find_one({"_id": "content"})
     
-    default_content = "Reports clear after 6 hours • Notifications for urgent incidents within 500m"
+    default_content = "📝 NEW: Street Notes with emoji shortcuts 🚽 ☕ 🧋 🅿️ 🎵 — share tips with your neighbours  •  Choose how long your note lasts: 1 hour, 3 days, or forever  •  Tap the blue crosshair to find yourself on the map  •  Add this app to your home screen for a native-app feel  •  Tap the active users badge to chat with the community"
     
     if content:
         return {
@@ -654,15 +654,34 @@ async def get_welcome_notice():
     
     # Default content
     default_content = """<h2>Welcome to Melbourne Community Map</h2>
-<p>This interactive map helps you stay informed about community incidents and safety in Melbourne.</p>
+<p>Your friendly neighbourhood map for staying informed and helping each other out around Melbourne.</p>
+
+<h3>🚨 Report Incidents</h3>
+<p>Spotted something the community should know about? Tap <strong>Report Incident</strong> to flag it on the map. Description is optional — share as much or as little as you like.</p>
+
+<h3>📝 Street Notes</h3>
+<p>Share quick tips with your neighbours — where the nearest toilet is, a milk-tea deal, a busker worth checking out, or just a thought about the moment.</p>
 <ul>
-<li>📍 Report incidents you've witnessed or experienced</li>
-<li>🗺️ View recent community reports on the map</li>
-<li>💬 Join the community chat to share updates</li>
-<li>📍 Check admin-highlighted streets for important information</li>
+<li>Tap a quick-shortcut emoji to auto-fill your note (🚽 ☕ 🧋 🍜 🅿️ 🎵 ❤️ 😊 and more)</li>
+<li>Choose how long it lasts — from <strong>1 hour</strong> up to <strong>3 days</strong>, or keep it <strong>forever</strong></li>
+<li>Add an optional image; everything else is optional too</li>
 </ul>
-<p>Your reports help keep the community safe. Stay alert and report responsibly.</p>"""
-    
+
+<h3>🗺️ Map Tricks</h3>
+<ul>
+<li>Tap the blue crosshair button to centre the map on your current location</li>
+<li>Swipe up anywhere to hide the header for a fullscreen map view — tap the minimise button to bring it back</li>
+<li>Streets highlighted by admins flag helpful context like poor lighting or crowded areas</li>
+</ul>
+
+<h3>💬 Live Updates & Community Chat</h3>
+<p>Tap the active users badge in the Live Updates banner to drop into the community group chat. Messages clear every 24 hours.</p>
+
+<h3>📲 Install on your home screen</h3>
+<p>For the full experience, add this app to your home screen — it opens like a native app, no browser bars.</p>
+
+<p style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; font-size: 0.85rem; color: #6b7280;">In an emergency, always call <strong>000</strong> first. This app is for community awareness only.</p>"""
+
     return {
         "content": default_content,
         "enabled": True
@@ -713,6 +732,78 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+DEFAULT_CONTENT_VERSION = "v2_2026_05"
+
+DEFAULT_LIVE_UPDATES_TEXT = "📝 NEW: Street Notes with emoji shortcuts 🚽 ☕ 🧋 🅿️ 🎵 — share tips with your neighbours  •  Choose how long your note lasts: 1 hour, 3 days, or forever  •  Tap the blue crosshair to find yourself on the map  •  Add this app to your home screen for a native-app feel  •  Tap the active users badge to chat with the community"
+
+DEFAULT_WELCOME_NOTICE_CONTENT = """<h2>Welcome to Melbourne Community Map</h2>
+<p>Your friendly neighbourhood map for staying informed and helping each other out around Melbourne.</p>
+
+<h3>🚨 Report Incidents</h3>
+<p>Spotted something the community should know about? Tap <strong>Report Incident</strong> to flag it on the map. Description is optional — share as much or as little as you like.</p>
+
+<h3>📝 Street Notes</h3>
+<p>Share quick tips with your neighbours — where the nearest toilet is, a milk-tea deal, a busker worth checking out, or just a thought about the moment.</p>
+<ul>
+<li>Tap a quick-shortcut emoji to auto-fill your note (🚽 ☕ 🧋 🍜 🅿️ 🎵 ❤️ 😊 and more)</li>
+<li>Choose how long it lasts — from <strong>1 hour</strong> up to <strong>3 days</strong>, or keep it <strong>forever</strong></li>
+<li>Add an optional image; everything else is optional too</li>
+</ul>
+
+<h3>🗺️ Map Tricks</h3>
+<ul>
+<li>Tap the blue crosshair button to centre the map on your current location</li>
+<li>Swipe up anywhere to hide the header for a fullscreen map view — tap the minimise button to bring it back</li>
+<li>Streets highlighted by admins flag helpful context like poor lighting or crowded areas</li>
+</ul>
+
+<h3>💬 Live Updates & Community Chat</h3>
+<p>Tap the active users badge in the Live Updates banner to drop into the community group chat. Messages clear every 24 hours.</p>
+
+<h3>📲 Install on your home screen</h3>
+<p>For the full experience, add this app to your home screen — it opens like a native app, no browser bars.</p>
+
+<p style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; font-size: 0.85rem; color: #6b7280;">In an emergency, always call <strong>000</strong> first. This app is for community awareness only.</p>"""
+
+@app.on_event("startup")
+async def run_content_migrations():
+    """
+    One-time refresh of live updates and welcome notice when a new content version
+    ships. Admin edits made AFTER this version stamp are preserved (because the
+    same version stamp is written on every admin save).
+    """
+    try:
+        marker = await db.migrations.find_one({"_id": f"content_refresh_{DEFAULT_CONTENT_VERSION}"})
+        if marker:
+            return
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await db.live_updates.update_one(
+            {"_id": "content"},
+            {"$set": {
+                "text": DEFAULT_LIVE_UPDATES_TEXT,
+                "updated_at": now_iso,
+                "content_version": DEFAULT_CONTENT_VERSION
+            }},
+            upsert=True
+        )
+        await db.welcome_notice.update_one(
+            {},
+            {"$set": {
+                "content": DEFAULT_WELCOME_NOTICE_CONTENT,
+                "enabled": True,
+                "updated_at": now_iso,
+                "content_version": DEFAULT_CONTENT_VERSION
+            }},
+            upsert=True
+        )
+        await db.migrations.insert_one({
+            "_id": f"content_refresh_{DEFAULT_CONTENT_VERSION}",
+            "applied_at": now_iso
+        })
+        logger.info(f"Applied content refresh migration {DEFAULT_CONTENT_VERSION}")
+    except Exception as e:
+        logger.exception(f"Content migration failed: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
