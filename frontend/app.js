@@ -39,6 +39,25 @@ let streetNotesLayer = null; // Layer for street note markers
 let showStreetNotes = true; // Toggle for showing/hiding street notes
 let streetNoteLocation = null; // Selected location for Street Note modal
 
+// Emoji shortcut definitions for Street Notes
+const EMOJI_SHORTCUTS = [
+  { emoji: "🚽", label: "Toilet", phrase: "There is a toilet here" },
+  { emoji: "🧋", label: "Drink deal", phrase: "Milk tea deal here" },
+  { emoji: "☕", label: "Coffee", phrase: "Great coffee around here" },
+  { emoji: "🍜", label: "Food", phrase: "Cheap eats nearby" },
+  { emoji: "🅿️", label: "Parking", phrase: "Free parking spot here" },
+  { emoji: "🎵", label: "Music", phrase: "Live music / busker here" },
+  { emoji: "❤️", label: "Love it", phrase: "Love this spot" },
+  { emoji: "😊", label: "Happy", phrase: "Feeling happy here" },
+  { emoji: "😂", label: "Funny", phrase: "Something funny just happened" },
+  { emoji: "🥳", label: "Yay!", phrase: "I'm over the moon!" },
+  { emoji: "😢", label: "Sad", phrase: "Feeling a bit down here" },
+  { emoji: "🫣", label: "Awkward", phrase: "Awkward moment..." },
+  { emoji: "😭", label: "Upset", phrase: "Really upset right now" },
+];
+let selectedNoteEmoji = null;
+let lastAutofilledPhrase = null;
+
 // Load user reactions from localStorage on page load
 function loadUserReactions() {
   try {
@@ -342,7 +361,7 @@ function renderList() {
 
     const left = document.createElement("div");
     left.className = "incident-card-left";
-    left.textContent = "📝";
+    left.textContent = note.emoji || "📝";
 
     const main = document.createElement("div");
     main.className = "incident-card-main";
@@ -2004,11 +2023,16 @@ function renderStreetNotes() {
   if (!showStreetNotes) return;
   
   streetNotes.forEach((note) => {
+    const pinEmoji = note.emoji || "📝";
+    const hasCustomEmoji = !!note.emoji;
+    const bg = hasCustomEmoji ? "#ffffff" : "#1E88E5";
+    const fontSize = hasCustomEmoji ? "15px" : "12px";
+    const borderColor = hasCustomEmoji ? "#1E88E5" : "white";
     const icon = L.divIcon({
       className: "street-note-pin",
-      html: '<div style="background: #1E88E5; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-size: 12px;">📝</div>',
-      iconSize: [24, 24],
-      iconAnchor: [12, 12]
+      html: `<div style="background: ${bg}; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid ${borderColor}; box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-size: ${fontSize};">${pinEmoji}</div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
     });
     
     const marker = L.marker([note.latitude, note.longitude], { icon });
@@ -2127,6 +2151,10 @@ function openStreetNoteModal() {
   if (imageInput) imageInput.value = "";
   if (imageMeta) imageMeta.textContent = "No image selected";
   if (locationInput) locationInput.value = "";
+
+  selectedNoteEmoji = null;
+  lastAutofilledPhrase = null;
+  renderEmojiShortcutBar();
   
   // Get user location for display
   const locationDisplay = document.getElementById("street-note-location");
@@ -2160,6 +2188,58 @@ function closeStreetNoteModal() {
   if (!modal) return;
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
+}
+
+function renderEmojiShortcutBar() {
+  const bar = document.getElementById("emoji-shortcut-bar");
+  if (!bar) return;
+  bar.innerHTML = "";
+  EMOJI_SHORTCUTS.forEach((item) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "emoji-shortcut-btn";
+    btn.dataset.emoji = item.emoji;
+    if (selectedNoteEmoji === item.emoji) btn.classList.add("selected");
+    btn.innerHTML = `<span class="emoji-shortcut-emoji">${item.emoji}</span><span class="emoji-shortcut-label">${item.label}</span>`;
+    btn.addEventListener("click", () => handleEmojiShortcut(item));
+    bar.appendChild(btn);
+  });
+}
+
+function updateEmojiButtonStates() {
+  const bar = document.getElementById("emoji-shortcut-bar");
+  if (!bar) return;
+  bar.querySelectorAll(".emoji-shortcut-btn").forEach((btn) => {
+    btn.classList.toggle("selected", btn.dataset.emoji === selectedNoteEmoji);
+  });
+}
+
+function handleEmojiShortcut(item) {
+  const textarea = document.getElementById("street-note-text");
+  if (!textarea) return;
+
+  // Tap same emoji again -> deselect (text stays so user can edit)
+  if (selectedNoteEmoji === item.emoji) {
+    selectedNoteEmoji = null;
+    updateEmojiButtonStates();
+    return;
+  }
+
+  selectedNoteEmoji = item.emoji;
+
+  // Autofill only if textbox is empty OR still holds the previous autofill phrase
+  const current = textarea.value;
+  const canAutofill = current.trim() === "" || current === lastAutofilledPhrase;
+  if (canAutofill) {
+    textarea.value = item.phrase;
+    lastAutofilledPhrase = item.phrase;
+    const countEl = document.getElementById("street-note-count");
+    if (countEl) countEl.textContent = item.phrase.length;
+    const submitBtn = document.getElementById("street-note-submit");
+    if (submitBtn) submitBtn.disabled = item.phrase.length === 0 || item.phrase.length > 150;
+  }
+
+  updateEmojiButtonStates();
 }
 
 async function fileToImageDataUrl(file, maxWidth = 1280, maxHeight = 1280, quality = 0.8) {
@@ -2238,7 +2318,8 @@ async function submitStreetNote() {
         latitude: lat,
         longitude: lng,
         location_text: locationText,
-        image_url: imageUrl
+        image_url: imageUrl,
+        emoji: selectedNoteEmoji || null
       }),
     });
     

@@ -560,6 +560,7 @@ class StreetNoteCreate(BaseModel):
     longitude: float
     location_text: Optional[str] = ""
     image_url: Optional[str] = None
+    emoji: Optional[str] = None
 
 @api_router.get("/street-notes")
 async def get_street_notes():
@@ -604,6 +605,7 @@ async def create_street_note(note_data: StreetNoteCreate):
         "longitude": note_data.longitude,
         "location_text": (note_data.location_text or "").strip(),
         "image_url": note_data.image_url or "",
+        "emoji": (note_data.emoji or "").strip() or None,
         "created_at": now.isoformat(),
         "expires_at": expires_at.isoformat()
     }

@@ -527,6 +527,87 @@ body {
   text-align: right;
 }
 
+.street-note-hint {
+  font-weight: 400;
+  font-size: 0.7rem;
+  color: #9ca3af;
+  margin-left: 0.25rem;
+}
+
+.emoji-shortcut-bar {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px 2px 8px;
+  margin-top: 4px;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+
+.emoji-shortcut-bar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.emoji-shortcut-bar::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 4px;
+}
+
+.emoji-shortcut-bar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.emoji-shortcut-btn {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 60px;
+  padding: 8px 10px;
+  background: #f3f4f6;
+  border: 1.5px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  scroll-snap-align: start;
+}
+
+.emoji-shortcut-btn:hover {
+  background: #e5e7eb;
+  transform: translateY(-1px);
+}
+
+.emoji-shortcut-btn:active {
+  transform: translateY(0);
+}
+
+.emoji-shortcut-btn.selected {
+  background: #dbeafe;
+  border-color: #1E88E5;
+  box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.12);
+}
+
+.emoji-shortcut-emoji {
+  font-size: 1.4rem;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.emoji-shortcut-label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.emoji-shortcut-btn.selected .emoji-shortcut-label {
+  color: #1565C0;
+  font-weight: 600;
+}
+
 .street-note-image-input {
   width: 100%;
   font-size: 0.8125rem;
