@@ -887,6 +887,13 @@ body {
   color: #4b5563;
 }
 
+.form-optional {
+  font-weight: 400;
+  font-size: 0.7rem;
+  color: #9ca3af;
+  margin-left: 0.25rem;
+}
+
 .report-modal-content .field input[type="text"],
 .report-modal-content .field input[type="email"],
 .report-modal-content .field input[type="tel"],

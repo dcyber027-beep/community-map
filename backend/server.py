@@ -29,7 +29,7 @@ api_router = APIRouter(prefix="/api")
 class IncidentCreate(BaseModel):
     category: str  # "protest", "theft", "harassment"
     urgency: str  # "low", "medium", "high"
-    description: str
+    description: Optional[str] = ""
     latitude: float
     longitude: float
     contact_email: Optional[str] = None

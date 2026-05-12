@@ -687,10 +687,6 @@ async function submitReport() {
     alert("Please choose an urgency level.");
     return;
   }
-  if (!description) {
-    alert("Please add a brief description.");
-    return;
-  }
   if (!agreementChecked) {
     alert("You must confirm the agreement before posting.");
     return;
