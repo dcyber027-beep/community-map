@@ -3056,7 +3056,11 @@ body:has(#view-map.view-container.active) > .top-banner {
   transform: translateX(-50%);
   z-index: 1200;
   width: min(430px, calc(100vw - 1.5rem));
+  height: 0;
+  min-height: 0;
   padding: 0;
+  overflow: visible;
+  background: transparent !important;
   pointer-events: none;
 }
 
@@ -3442,9 +3446,9 @@ body.header-collapsed:has(#view-map.view-container.active) .exit-fullscreen-btn 
   background: #d7dccf;
 }
 
-/* Collapsed header: map uses space below the emergency pill only */
+/* Collapsed header: keep map under the emergency pill so no black band appears. */
 body.header-collapsed:has(#view-map.view-container.active) .app-shell > #view-map.view-container.active {
-  top: max(3.35rem, calc(env(safe-area-inset-top) + 3.1rem));
+  top: 0;
 }
 
 .app-shell:has(#view-map.view-container.active) #view-map #map {
@@ -3459,15 +3463,15 @@ body.header-collapsed:has(#view-map.view-container.active) .app-shell > #view-ma
 
 /* Compact legal pill above map tiles on map view */
 body:has(#view-map.view-container.active) .app-shell > .legal-links {
-  position: fixed;
-  bottom: calc(0.52rem + env(safe-area-inset-bottom));
-  left: 50%;
-  right: auto;
+  position: fixed !important;
+  bottom: calc(0.52rem + env(safe-area-inset-bottom)) !important;
+  left: 0.7rem !important;
+  right: auto !important;
   z-index: 1180;
   margin: 0;
   width: max-content;
   max-width: calc(100vw - 1.4rem);
-  transform: translateX(-50%);
+  transform: none !important;
   padding: 0.28rem 0.55rem;
   border-radius: 999px;
   background: rgba(7, 16, 24, 0.5);
@@ -3520,8 +3524,14 @@ body:has(#view-map.view-container.active) .leaflet-bottom.leaflet-left {
 }
 
 body:has(#view-map.view-container.active) .leaflet-bottom.leaflet-right {
-  bottom: calc(2.25rem + env(safe-area-inset-bottom));
-  right: 0.45rem;
+  bottom: calc(0.52rem + env(safe-area-inset-bottom));
+  right: 0.7rem;
+}
+
+body:has(#view-map.view-container.active)
+  .leaflet-bottom.leaflet-right
+  .leaflet-control:has(.notes-toggle-container) {
+  margin-bottom: 2.15rem !important;
 }
 
 .leaflet-bar {
@@ -3619,7 +3629,7 @@ body:has(#view-map.view-container.active) .leaflet-bottom.leaflet-right {
 }
 
 .leaflet-control-attribution {
-  margin: 0 0.2rem 0.15rem 0 !important;
+  margin: 0 !important;
   padding: 0.15rem 0.38rem !important;
   border-radius: 999px 0 0 999px;
   background: rgba(7, 16, 24, 0.5) !important;
