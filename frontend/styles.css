@@ -3656,10 +3656,11 @@ body:has(#view-map.view-container.active)
     var(--ui-bg);
 }
 
+/* List view uses normal page-flow scrolling to avoid jitter from nested scroll containers. */
 #view-list.view-container.active {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
   gap: 0.55rem;
 }
@@ -3667,20 +3668,22 @@ body:has(#view-map.view-container.active)
 .incident-list {
   width: min(460px, calc(100vw - 20px));
   margin: 0 auto;
-  padding: 0 0 5rem;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  padding: 0 0 2rem;
   background: transparent;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  overflow: visible;
 }
 
 /* In list view, the live-updates banner only adds noise — keep it for map view only. */
 body:has(#view-list.view-container.active) .app-shell > #collapsible-header .live-updates-banner {
   display: none;
+}
+
+/* Keep the view-toggle labels on a single line so they don't wrap to two rows on phones. */
+.view-toggle .toggle-button {
+  white-space: nowrap;
 }
 
 .list-filters {
