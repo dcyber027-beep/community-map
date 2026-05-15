@@ -1011,7 +1011,7 @@ body {
   border-top: 1px solid #f1f5f9;
   background: #fafbfc;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 .report-modal-content .primary-button {
@@ -1021,6 +1021,7 @@ body {
   font-weight: 600;
   font-size: 0.9rem;
   padding: 0.7rem 1.5rem;
+  min-width: min(180px, 100%);
   box-shadow: 0 1px 3px rgba(220, 38, 38, 0.25);
   transition: all 0.15s ease;
 }
@@ -1855,7 +1856,7 @@ body {
   padding: 1rem 1.5rem;
   border-top: 1px solid #e5e7eb;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   background: #f9fafb;
 }
 
@@ -3050,12 +3051,19 @@ body {
 body:has(#view-map.view-container.active) > .top-banner {
   position: fixed;
   top: max(0.25rem, env(safe-area-inset-top));
-  left: 0;
-  right: 0;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
   z-index: 1200;
-  width: 100%;
-  padding-left: max(0.75rem, env(safe-area-inset-left));
-  padding-right: max(0.75rem, env(safe-area-inset-right));
+  width: min(430px, calc(100vw - 1.5rem));
+  padding: 0;
+  pointer-events: none;
+}
+
+body:has(#view-map.view-container.active) > .top-banner .top-banner-content {
+  pointer-events: auto;
+  max-width: 100%;
+  background: linear-gradient(135deg, rgba(239, 35, 60, 0.5), rgba(15, 23, 42, 0.54));
 }
 
 /* When any modal/admin sheet is open, keep the floating map chrome out of the way. */
@@ -3452,14 +3460,14 @@ body.header-collapsed:has(#view-map.view-container.active) .app-shell > #view-ma
 /* Compact legal pill above map tiles on map view */
 body:has(#view-map.view-container.active) .app-shell > .legal-links {
   position: fixed;
-  bottom: calc(0.68rem + env(safe-area-inset-bottom));
-  left: auto;
-  right: 0.7rem;
+  bottom: calc(0.52rem + env(safe-area-inset-bottom));
+  left: 50%;
+  right: auto;
   z-index: 1180;
   margin: 0;
   width: max-content;
   max-width: calc(100vw - 1.4rem);
-  transform: none;
+  transform: translateX(-50%);
   padding: 0.28rem 0.55rem;
   border-radius: 999px;
   background: rgba(7, 16, 24, 0.5);
@@ -3496,23 +3504,23 @@ body:has(#view-list.view-container.active) .app-shell > .legal-links {
 
 body:has(#view-map.view-container.active) .leaflet-top.leaflet-left {
   top: auto;
-  bottom: calc(12.4rem + env(safe-area-inset-bottom));
+  bottom: calc(9.25rem + env(safe-area-inset-bottom));
   left: 0.7rem;
 }
 
 body:has(#view-map.view-container.active) .leaflet-top.leaflet-right {
   top: auto;
   right: 0.7rem;
-  bottom: calc(6.2rem + env(safe-area-inset-bottom));
+  bottom: calc(4.8rem + env(safe-area-inset-bottom));
 }
 
 body:has(#view-map.view-container.active) .leaflet-bottom.leaflet-left {
-  bottom: calc(2.9rem + env(safe-area-inset-bottom));
+  bottom: calc(2.45rem + env(safe-area-inset-bottom));
   left: 0.7rem;
 }
 
 body:has(#view-map.view-container.active) .leaflet-bottom.leaflet-right {
-  bottom: calc(2.9rem + env(safe-area-inset-bottom));
+  bottom: calc(2.25rem + env(safe-area-inset-bottom));
   right: 0.45rem;
 }
 
@@ -3574,7 +3582,7 @@ body:has(#view-map.view-container.active) .leaflet-bottom.leaflet-right {
 
 .notes-toggle-container {
   min-width: 0;
-  padding: 0.55rem 0.7rem;
+  padding: 0.48rem 0.62rem;
   border: 1px solid var(--ui-border) !important;
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.74) !important;
@@ -3584,7 +3592,13 @@ body:has(#view-map.view-container.active) .leaflet-bottom.leaflet-right {
   -webkit-backdrop-filter: var(--ui-blur);
 }
 
+.notes-toggle-container span {
+  font-size: 0.72rem !important;
+}
+
 .street-highlights-legend {
+  max-width: min(190px, calc(100vw - 7.2rem)) !important;
+  padding: 0.45rem 0.55rem !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   border-radius: 12px !important;
   background: rgba(15, 23, 42, 0.76) !important;
@@ -3605,7 +3619,7 @@ body:has(#view-map.view-container.active) .leaflet-bottom.leaflet-right {
 }
 
 .leaflet-control-attribution {
-  margin: 0 0.35rem 0.2rem 0 !important;
+  margin: 0 0.2rem 0.15rem 0 !important;
   padding: 0.15rem 0.38rem !important;
   border-radius: 999px 0 0 999px;
   background: rgba(7, 16, 24, 0.5) !important;
@@ -3614,6 +3628,11 @@ body:has(#view-map.view-container.active) .leaflet-bottom.leaflet-right {
   line-height: 1.25 !important;
   backdrop-filter: blur(12px) saturate(140%);
   -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+.location-map .leaflet-control-attribution,
+#highlight-map .leaflet-control-attribution {
+  margin: 0 0.3rem 0.3rem 0 !important;
 }
 
 .leaflet-control-attribution a {
