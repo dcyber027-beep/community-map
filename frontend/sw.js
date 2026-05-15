@@ -1,4 +1,4 @@
-const CACHE_NAME = 'community-map-v1';
+const CACHE_NAME = 'community-map-v2';
 const PRECACHE_URLS = [
   '/',
   '/index.html',

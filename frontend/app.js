@@ -1931,6 +1931,7 @@ function initMap() {
     [MELBOURNE_CBD.lat, MELBOURNE_CBD.lng],
     MELBOURNE_CBD.zoom
   );
+  map.attributionControl.setPrefix(false);
   L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
     maxZoom: 20,
     subdomains: "abcd",
@@ -2088,6 +2089,7 @@ function initLocationMap() {
     [MELBOURNE_CBD.lat, MELBOURNE_CBD.lng],
     MELBOURNE_CBD.zoom
   );
+  locationMap.attributionControl.setPrefix(false);
   L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
     maxZoom: 20,
     subdomains: "abcd",
@@ -2876,6 +2878,7 @@ function openHighlightStreetModal() {
     const hlCenter = userLocation ? [userLocation.lat, userLocation.lng] : [MELBOURNE_CBD.lat, MELBOURNE_CBD.lng];
     const hlZoom = userLocation ? 16 : MELBOURNE_CBD.zoom;
     highlightMap = L.map("highlight-map").setView(hlCenter, hlZoom);
+    highlightMap.attributionControl.setPrefix(false);
     L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
       maxZoom: 20,
       subdomains: "abcd",

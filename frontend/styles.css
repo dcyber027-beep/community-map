@@ -3123,7 +3123,7 @@ body:has(#view-map.view-container.active) > .top-banner {
 }
 
 .app-shell:has(#view-map.view-container.active) #collapsible-header > .collapsible-inner {
-  max-height: min(46vh, 400px);
+  max-height: min(40vh, 350px);
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
@@ -3349,6 +3349,7 @@ body.header-collapsed:has(#view-map.view-container.active) .exit-fullscreen-btn 
   flex-direction: column;
   gap: 0.65rem;
   width: 100%;
+  max-height: 150px;
   margin: 0;
   padding: 0.72rem;
   border: 1px solid rgba(34, 197, 94, 0.22);
@@ -3358,6 +3359,23 @@ body.header-collapsed:has(#view-map.view-container.active) .exit-fullscreen-btn 
   backdrop-filter: var(--ui-blur);
   -webkit-backdrop-filter: var(--ui-blur);
   isolation: isolate;
+  overflow: hidden;
+}
+
+.updates-content {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.updates-info {
+  margin-left: 0;
+  min-height: 0;
+}
+
+.updates-scroll-container {
+  max-height: 2.8rem;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .updates-title,
@@ -3418,19 +3436,26 @@ body.header-collapsed:has(#view-map.view-container.active) .app-shell > #view-ma
   background: #d7dccf;
 }
 
-/* Footer strip above map tiles on map view */
+/* Compact legal pill above map tiles on map view */
 body:has(#view-map.view-container.active) .app-shell > .legal-links {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: calc(0.6rem + env(safe-area-inset-bottom));
+  left: 50%;
+  right: auto;
   z-index: 1180;
   margin: 0;
-  padding: 0.4rem 1rem calc(0.4rem + env(safe-area-inset-bottom));
-  background: rgba(7, 16, 24, 0.72);
+  width: max-content;
+  max-width: calc(100vw - 2rem);
+  transform: translateX(-50%);
+  padding: 0.36rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(7, 16, 24, 0.56);
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  font-size: 0.72rem;
+  gap: 0.65rem;
 }
 
 body:has(#view-list.view-container.active) .app-shell > .legal-links {
@@ -3477,6 +3502,22 @@ body:has(#view-list.view-container.active) .app-shell > .legal-links {
   box-shadow: var(--ui-shadow);
   backdrop-filter: var(--ui-blur);
   -webkit-backdrop-filter: var(--ui-blur);
+}
+
+.leaflet-control-attribution {
+  margin: 0 0.35rem 0.2rem 0 !important;
+  padding: 0.15rem 0.38rem !important;
+  border-radius: 999px 0 0 999px;
+  background: rgba(7, 16, 24, 0.5) !important;
+  color: rgba(255, 255, 255, 0.7) !important;
+  font-size: 0.62rem !important;
+  line-height: 1.25 !important;
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+.leaflet-control-attribution a {
+  color: rgba(255, 255, 255, 0.84) !important;
 }
 
 #view-list {
@@ -3594,6 +3635,7 @@ body:has(#view-list.view-container.active) .app-shell > .legal-links {
 .modal,
 .modal-overlay,
 .street-note-overlay {
+  z-index: 1400;
   background: rgba(2, 6, 23, 0.62);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
