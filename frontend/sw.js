@@ -2,6 +2,9 @@ const CACHE_NAME = 'community-map-v1';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
+  '/privacy.html',
+  '/support.html',
+  '/terms.html',
   '/styles.css',
   '/app.js',
   '/manifest.json',
