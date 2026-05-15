@@ -2234,7 +2234,7 @@ function renderStreetNotes() {
 function addNotesToggle() {
   if (!map) return;
   
-  const toggle = L.control({ position: "topright" });
+  const toggle = L.control({ position: "bottomright" });
   
   toggle.onAdd = function() {
     const div = L.DomUtil.create("div", "notes-toggle-container");
