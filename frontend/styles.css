@@ -3118,7 +3118,7 @@ body:has(.street-note-overlay:not(.hidden)) .app-shell > .legal-links {
   left: auto;
   transform: none;
   pointer-events: auto;
-  padding: 0 max(0.75rem, env(safe-area-inset-right)) 0 max(0.75rem, env(safe-area-inset-left));
+  padding: 0;
   display: grid;
   grid-template-rows: 1fr;
   transition: grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1);
@@ -3127,8 +3127,9 @@ body:has(.street-note-overlay:not(.hidden)) .app-shell > .legal-links {
 #collapsible-header > .collapsible-inner {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  max-width: min(520px, calc(100vw - 1.5rem));
+  gap: 0.6rem;
+  width: min(460px, calc(100vw - 20px));
+  max-width: 100%;
   margin: 0 auto;
   overflow: hidden;
   min-height: 0;
