@@ -2714,10 +2714,6 @@ body.header-collapsed #collapsible-header {
   grid-template-rows: 0fr;
 }
 
-body.header-collapsed #map {
-  height: calc(100vh - 55px) !important;
-}
-
 body.header-collapsed .top-banner {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
@@ -2820,7 +2816,7 @@ body.header-collapsed .exit-fullscreen-btn {
     border-radius: 7px;
   }
 
-  #map {
+  .app-shell:not(:has(#view-map.view-container.active)) #map {
     height: calc(100vh - 320px);
   }
 
@@ -3029,6 +3025,12 @@ body {
   overflow-x: hidden;
 }
 
+/* Map view: main fills the viewport so the map can sit edge-to-edge under floating chrome */
+.app-shell:has(#view-map.view-container.active) {
+  min-height: 100dvh;
+  min-height: 100svh;
+}
+
 .top-banner {
   position: relative;
   z-index: 30;
@@ -3042,6 +3044,18 @@ body {
   background: transparent;
   box-shadow: none;
   color: var(--ui-text);
+}
+
+/* Emergency strip floats above the full-screen map */
+body:has(#view-map.view-container.active) > .top-banner {
+  position: fixed;
+  top: max(0.25rem, env(safe-area-inset-top));
+  left: 0;
+  right: 0;
+  z-index: 1200;
+  width: 100%;
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
 }
 
 .top-banner-content {
@@ -3080,6 +3094,9 @@ body {
   transform: none;
   pointer-events: auto;
   padding: 0 max(0.75rem, env(safe-area-inset-right)) 0 max(0.75rem, env(safe-area-inset-left));
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 #collapsible-header > .collapsible-inner {
@@ -3088,7 +3105,47 @@ body {
   gap: 0.65rem;
   max-width: min(520px, calc(100vw - 1.5rem));
   margin: 0 auto;
-  overflow: visible;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Map view: header stack as floating islands over the map (pan passes through gaps) */
+.app-shell:has(#view-map.view-container.active) #collapsible-header {
+  position: fixed;
+  top: max(3.35rem, calc(env(safe-area-inset-top) + 3.1rem));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1150;
+  width: min(520px, calc(100vw - 1rem));
+  max-width: calc(100vw - 1rem);
+  padding: 0 0.5rem;
+  pointer-events: none;
+}
+
+.app-shell:has(#view-map.view-container.active) #collapsible-header > .collapsible-inner {
+  max-height: min(46vh, 400px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+body.header-collapsed:has(#view-map.view-container.active) #collapsible-header > .collapsible-inner {
+  max-height: none;
+  overflow: hidden;
+}
+
+.app-shell:has(#view-map.view-container.active) .app-header,
+.app-shell:has(#view-map.view-container.active) .app-navigation,
+.app-shell:has(#view-map.view-container.active) .live-updates-banner {
+  pointer-events: auto;
+}
+
+body.header-collapsed:has(#view-map.view-container.active) #collapsible-header {
+  pointer-events: none;
+}
+
+body.header-collapsed:has(#view-map.view-container.active) .exit-fullscreen-btn {
+  pointer-events: auto;
 }
 
 .app-header {
@@ -3327,21 +3384,63 @@ body {
   background: var(--ui-bg);
 }
 
-#view-map.view-container.active {
-  display: flex;
-  flex-direction: column;
-}
-
 #view-map {
   overflow: hidden;
 }
 
-#map {
-  flex: 1;
-  width: 100%;
-  min-height: 240px;
-  height: auto;
+/* Map view: full-viewport map layer under floating UI */
+.app-shell:has(#view-map.view-container.active) #view-map.view-container.active {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 2.5rem;
+  z-index: 0;
+  flex: none !important;
+  display: block !important;
+  min-height: 0 !important;
+  overflow: hidden;
   background: #d7dccf;
+}
+
+/* Collapsed header: map uses space below the emergency pill only */
+body.header-collapsed:has(#view-map.view-container.active) .app-shell > #view-map.view-container.active {
+  top: max(3.35rem, calc(env(safe-area-inset-top) + 3.1rem));
+}
+
+.app-shell:has(#view-map.view-container.active) #view-map #map {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  flex: none !important;
+  background: #d7dccf;
+}
+
+/* Footer strip above map tiles on map view */
+body:has(#view-map.view-container.active) .app-shell > .legal-links {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1180;
+  margin: 0;
+  padding: 0.4rem 1rem calc(0.4rem + env(safe-area-inset-bottom));
+  background: rgba(7, 16, 24, 0.72);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+body:has(#view-list.view-container.active) .app-shell > .legal-links {
+  position: relative;
+  z-index: auto;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-top: none;
+  padding: 0.75rem 1rem 1rem;
 }
 
 .leaflet-container {
@@ -3824,11 +3923,6 @@ body {
     padding: 0.7rem;
   }
 
-  body.header-collapsed #map {
-    flex: 1;
-    min-height: 260px;
-  }
-
   .modal {
     align-items: flex-end;
   }
@@ -3872,5 +3966,10 @@ body {
 
   .admin-card-actions {
     position: static;
+  }
+
+  .app-shell:has(#view-map.view-container.active) #view-map #map {
+    height: 100% !important;
+    min-height: 100% !important;
   }
 }
