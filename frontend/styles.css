@@ -3650,7 +3650,7 @@ body:has(#view-map.view-container.active)
 }
 
 #view-list {
-  padding-top: 0.75rem;
+  padding-top: 0.5rem;
   background:
     radial-gradient(circle at 30% 0%, rgba(37, 99, 235, 0.22), transparent 22rem),
     var(--ui-bg);
@@ -3661,31 +3661,63 @@ body:has(#view-map.view-container.active)
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  gap: 0.75rem;
+  gap: 0.55rem;
 }
 
 .incident-list {
-  width: min(430px, calc(100vw - 24px));
+  width: min(460px, calc(100vw - 20px));
   margin: 0 auto;
-  padding: 0 0 6rem;
+  padding: 0 0 5rem;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* In list view, the live-updates banner only adds noise — keep it for map view only. */
+body:has(#view-list.view-container.active) .app-shell > #collapsible-header .live-updates-banner {
+  display: none;
 }
 
 .list-filters {
   margin: 0 auto;
-  width: min(430px, calc(100vw - 24px));
-  padding: 0.8rem;
+  width: min(460px, calc(100vw - 20px));
+  padding: 0.7rem 0.8rem;
   flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
   border: 1px solid var(--ui-border);
-  border-radius: 20px;
+  border-radius: 18px;
   background: var(--ui-surface);
   box-shadow: var(--ui-shadow);
   backdrop-filter: var(--ui-blur);
   -webkit-backdrop-filter: var(--ui-blur);
+}
+
+.list-filters .filter-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.list-filters .filter-group label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.list-filters .filter-group select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.78rem;
+  border-radius: 10px;
 }
 
 .filter-group label,
@@ -3700,12 +3732,70 @@ body:has(#view-map.view-container.active)
 .admin-report-card,
 .panel-card {
   border: 1px solid var(--ui-border);
-  border-radius: 20px;
+  border-radius: 18px;
   background: var(--ui-panel);
   color: var(--ui-text);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
   backdrop-filter: var(--ui-blur);
   -webkit-backdrop-filter: var(--ui-blur);
+}
+
+.incident-card {
+  padding: 0.85rem 0.95rem;
+  gap: 0.6rem;
+}
+
+.incident-card .incident-card-left {
+  font-size: 1.35rem;
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ui-border);
+  flex-shrink: 0;
+}
+
+.incident-card .incident-title {
+  font-size: 0.92rem;
+  margin-bottom: 0.2rem;
+  letter-spacing: -0.01em;
+}
+
+.incident-card .incident-meta {
+  font-size: 0.72rem;
+  margin-bottom: 0.4rem;
+}
+
+.incident-card .incident-description,
+.incident-card .incident-location {
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.incident-card .incident-tags {
+  margin-top: 0.5rem;
+  gap: 0.35rem;
+}
+
+.incident-card .tag {
+  font-size: 0.66rem;
+  padding: 0.18rem 0.55rem;
+}
+
+.incident-card .secondary-button {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--ui-border);
+  color: var(--ui-text);
+  border-radius: 12px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.incident-card .secondary-button:hover {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .incident-title,
@@ -4132,7 +4222,41 @@ body:has(#view-map.view-container.active)
   }
 
   .incident-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+    padding: 0.85rem;
+  }
+
+  .incident-card-left {
+    font-size: 1.5rem;
+    line-height: 1;
+  }
+
+  .incident-card-main {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .incident-card-actions {
     flex-direction: row;
+    width: 100%;
+    gap: 0.5rem;
+  }
+
+  .incident-card-actions button {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+    white-space: normal;
+  }
+
+  .incident-title,
+  .incident-description,
+  .incident-location,
+  .incident-meta {
+    overflow-wrap: anywhere;
+    word-break: normal;
   }
 
   .admin-card-actions {
