@@ -72,7 +72,7 @@
               </div>
             </div>
             <div class="header-right">
-              <a href="#" id="admin-button" class="admin-link">Admin</a>
+              <button id="avatar-btn" class="avatar-btn" type="button" aria-label="Choose your avatar" title="Choose your avatar">🚫</button>
             </div>
           </section>
 
@@ -594,6 +594,50 @@
     </div>
 
     <script src="./app.js"></script>
+    <!-- Avatar picker sheet -->
+    <div id="avatar-picker-overlay" class="modal-overlay hidden" aria-hidden="true">
+      <div class="avatar-picker-sheet">
+        <header class="avatar-sheet-header">
+          <h2>Choose your avatar</h2>
+          <button id="avatar-picker-close" class="icon-button" type="button" aria-label="Close">&times;</button>
+        </header>
+        <p class="avatar-sheet-hint">Your emoji appears on the map so others can see you. Tap one to set it.</p>
+        <div class="avatar-emoji-grid" id="avatar-emoji-grid">
+          <button class="avatar-emoji-btn active" data-emoji="🚫" type="button" title="Anonymous">🚫</button>
+          <button class="avatar-emoji-btn" data-emoji="🐶" type="button" title="Dog">🐶</button>
+          <button class="avatar-emoji-btn" data-emoji="🐱" type="button" title="Cat">🐱</button>
+          <button class="avatar-emoji-btn" data-emoji="🐺" type="button" title="Wolf">🐺</button>
+          <button class="avatar-emoji-btn" data-emoji="🦊" type="button" title="Fox">🦊</button>
+          <button class="avatar-emoji-btn" data-emoji="🦝" type="button" title="Raccoon">🦝</button>
+          <button class="avatar-emoji-btn" data-emoji="🦁" type="button" title="Lion">🦁</button>
+          <button class="avatar-emoji-btn" data-emoji="🐯" type="button" title="Tiger">🐯</button>
+          <button class="avatar-emoji-btn" data-emoji="🐷" type="button" title="Pig">🐷</button>
+          <button class="avatar-emoji-btn" data-emoji="🐭" type="button" title="Mouse">🐭</button>
+          <button class="avatar-emoji-btn" data-emoji="🐰" type="button" title="Rabbit">🐰</button>
+          <button class="avatar-emoji-btn" data-emoji="🐼" type="button" title="Panda">🐼</button>
+          <button class="avatar-emoji-btn" data-emoji="🐻" type="button" title="Bear">🐻</button>
+          <button class="avatar-emoji-btn" data-emoji="🐨" type="button" title="Koala">🐨</button>
+        </div>
+        <button id="avatar-clear-btn" class="ghost-button" type="button" style="margin-top:0.75rem;width:100%;">Remove avatar</button>
+      </div>
+    </div>
+
+    <!-- Name / title prompt sheet (shown after non-🚫 emoji chosen) -->
+    <div id="avatar-name-overlay" class="modal-overlay hidden" aria-hidden="true">
+      <div class="avatar-name-sheet">
+        <header class="avatar-sheet-header">
+          <h2 id="avatar-name-title">What should we call you?</h2>
+          <button id="avatar-name-close" class="icon-button" type="button" aria-label="Close">&times;</button>
+        </header>
+        <p class="avatar-sheet-hint">This name (title) shows when others tap your emoji on the map and appears next to your chat messages. Leave blank for a random animal name.</p>
+        <div class="field" style="margin-top:0.75rem;">
+          <label for="avatar-name-input">Your title</label>
+          <input id="avatar-name-input" type="text" maxlength="30" placeholder="e.g. Night Owl, Friendly Fox…" autocomplete="off" />
+        </div>
+        <button id="avatar-name-confirm" class="primary-button" type="button" style="margin-top:1rem;width:100%;">Set avatar</button>
+      </div>
+    </div>
+
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {

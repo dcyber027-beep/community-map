@@ -22,6 +22,33 @@ let lastAlertedIncidentIds = new Set();
 let userLocation = null;
 let adminLoginTemplate = "";
 let isAdminLoggedIn = false;
+
+// ── Avatar / identity state ──────────────────────────────────────────────────
+const AVATAR_ANIMALS = ["🐶","🐱","🐺","🦊","🦝","🦁","🐯","🐷","🐭","🐰","🐼","🐻","🐨"];
+const ANIMAL_NAMES   = ["Doggo","Kitty","Wolf","Fox","Raccoon","Lion","Tiger","Piglet","Mouse","Bunny","Panda","Bear","Koala"];
+
+function randomAnimalName() {
+  return ANIMAL_NAMES[Math.floor(Math.random() * ANIMAL_NAMES.length)] + " " + Math.floor(Math.random()*100);
+}
+
+const avatar = (() => {
+  const stored = JSON.parse(localStorage.getItem("userAvatar") || "null");
+  return stored || { emoji: "🚫", title: "" };
+})();
+
+function saveAvatar() {
+  localStorage.setItem("userAvatar", JSON.stringify(avatar));
+}
+
+function applyAvatarToUI() {
+  const btn = document.getElementById("avatar-btn");
+  if (btn) btn.textContent = avatar.emoji;
+  // Sync active state in picker
+  document.querySelectorAll(".avatar-emoji-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.emoji === avatar.emoji);
+  });
+}
+// ─────────────────────────────────────────────────────────────────────────────
 let locationDescriptionCache = new Map(); // Cache for location descriptions
 let userReactions = new Map(); // Track user reactions per incident (loaded from localStorage)
 let mapFilterState = { hours: null, urgency: null }; // Track map filter state
@@ -38,6 +65,12 @@ let streetNotes = []; // Store street notes
 let streetNotesLayer = null; // Layer for street note markers
 let showStreetNotes = true; // Toggle for showing/hiding street notes
 let streetNoteLocation = null; // Selected location for Street Note modal
+
+// Peer-location layer — emoji markers for other users and self
+let peerLayer = null;
+let ownPeerMarker = null;
+let peerLocationInterval = null;
+const PEER_TTL_MS = 45000; // remove peer after 45 s of silence
 
 // Emoji shortcut definitions for Street Notes
 const EMOJI_SHORTCUTS = [
@@ -1881,22 +1914,213 @@ function setupAdminLoginForm() {
 }
 
 function initAdminModal() {
-  const adminButton = document.getElementById("admin-button");
   const adminModal = document.getElementById("admin-modal");
-  const adminBody = document.getElementById("admin-body");
+  const adminBody  = document.getElementById("admin-body");
+  if (adminBody && !adminLoginTemplate) adminLoginTemplate = adminBody.innerHTML;
 
-  if (adminBody && !adminLoginTemplate) {
-    adminLoginTemplate = adminBody.innerHTML;
+  // 10-tap Easter egg on the M logo box
+  const logoBox = document.querySelector(".app-logo-box");
+  if (logoBox) {
+    let tapCount = 0;
+    let tapTimer = null;
+    logoBox.addEventListener("click", () => {
+      tapCount++;
+      clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => { tapCount = 0; }, 1500);
+      if (tapCount >= 10) {
+        tapCount = 0;
+        adminModal.classList.remove("hidden");
+        adminModal.setAttribute("aria-hidden", "false");
+        if (!isAdminLoggedIn) setupAdminLoginForm();
+      }
+    });
+  }
+}
+
+// ── Peer location broadcasting ────────────────────────────────────────────────
+// We reuse the existing /api/chat/messages endpoint pattern but target /api/peers
+// which may not exist on the backend yet.  We store peers in localStorage as a
+// graceful-degradation approach and also POST to the backend when available.
+
+const PEERS_KEY = "communityMapPeers_v1";
+
+function getPeerStore() {
+  try { return JSON.parse(localStorage.getItem(PEERS_KEY) || "{}"); } catch { return {}; }
+}
+function savePeerStore(store) {
+  try { localStorage.setItem(PEERS_KEY, JSON.stringify(store)); } catch {}
+}
+
+async function broadcastOwnLocation() {
+  if (avatar.emoji === "🚫" || !userLocation) return;
+  const peerId = getChatUserId();
+  const payload = {
+    id: peerId,
+    emoji: avatar.emoji,
+    title: avatar.title || "Stranger",
+    lat: userLocation.lat,
+    lng: userLocation.lng,
+    ts: Date.now(),
+  };
+  // Persist locally so same device works offline too
+  const store = getPeerStore();
+  store[peerId] = payload;
+  savePeerStore(store);
+  // Fire-and-forget to backend (endpoint may not exist yet; silently ignore 404)
+  try {
+    await fetch(`${API_BASE}/peers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (_) {}
+  renderPeerMarkers();
+}
+
+async function fetchPeers() {
+  const store = getPeerStore();
+  try {
+    const res = await fetch(`${API_BASE}/peers`);
+    if (res.ok) {
+      const remote = await res.json();
+      if (Array.isArray(remote)) {
+        remote.forEach(p => { store[p.id] = p; });
+        savePeerStore(store);
+      }
+    }
+  } catch (_) {}
+  renderPeerMarkers();
+}
+
+function renderPeerMarkers() {
+  if (!peerLayer || !map) return;
+  peerLayer.clearLayers();
+  const now = Date.now();
+  const store = getPeerStore();
+  const myId = getChatUserId();
+  Object.values(store).forEach(peer => {
+    if (now - peer.ts > PEER_TTL_MS) return; // stale
+    const icon = L.divIcon({
+      html: `<div class="peer-emoji-marker" title="${peer.title}">${peer.emoji}</div>`,
+      className: "",
+      iconSize: [40, 40],
+      iconAnchor: [20, 20],
+    });
+    const marker = L.marker([peer.lat, peer.lng], { icon, zIndexOffset: peer.id === myId ? 1000 : 500 });
+    marker.bindPopup(`<div class="peer-popup"><span class="peer-popup-emoji">${peer.emoji}</span><strong>${peer.title}</strong>${peer.id === myId ? '<br><span class="peer-popup-you">(you)</span>' : ''}</div>`, { maxWidth: 160 });
+    peerLayer.addLayer(marker);
+  });
+}
+
+function updateOwnMapMarker() {
+  // Remove stale self entry if avatar is 🚫
+  if (avatar.emoji === "🚫") {
+    const store = getPeerStore();
+    delete store[getChatUserId()];
+    savePeerStore(store);
+    renderPeerMarkers();
+    return;
+  }
+  broadcastOwnLocation();
+}
+
+function initPeerBroadcasting() {
+  // Broadcast every 20 s, fetch peers every 20 s
+  peerLocationInterval = setInterval(() => {
+    broadcastOwnLocation();
+    fetchPeers();
+  }, 20000);
+  // Initial fetch
+  fetchPeers();
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+function initAvatarPicker() {
+  applyAvatarToUI();
+
+  const pickerOverlay = document.getElementById("avatar-picker-overlay");
+  const nameOverlay   = document.getElementById("avatar-name-overlay");
+  const avatarBtn     = document.getElementById("avatar-btn");
+  const pickerClose   = document.getElementById("avatar-picker-close");
+  const nameClose     = document.getElementById("avatar-name-close");
+  const nameConfirm   = document.getElementById("avatar-name-confirm");
+  const nameInput     = document.getElementById("avatar-name-input");
+  const nameTitle     = document.getElementById("avatar-name-title");
+  const clearBtn      = document.getElementById("avatar-clear-btn");
+
+  let pendingEmoji = null;
+
+  function openPicker() {
+    pickerOverlay.classList.remove("hidden");
+    pickerOverlay.setAttribute("aria-hidden", "false");
+  }
+  function closePicker() {
+    pickerOverlay.classList.add("hidden");
+    pickerOverlay.setAttribute("aria-hidden", "true");
+  }
+  function openNameSheet(emoji) {
+    pendingEmoji = emoji;
+    if (nameTitle) nameTitle.textContent = `What should we call you? ${emoji}`;
+    nameInput.value = avatar.title || "";
+    nameOverlay.classList.remove("hidden");
+    nameOverlay.setAttribute("aria-hidden", "false");
+    setTimeout(() => nameInput.focus(), 120);
+  }
+  function closeNameSheet() {
+    nameOverlay.classList.add("hidden");
+    nameOverlay.setAttribute("aria-hidden", "true");
   }
 
-  adminButton.addEventListener("click", (e) => {
-    e.preventDefault();
-    adminModal.classList.remove("hidden");
-    adminModal.setAttribute("aria-hidden", "false");
-    if (!isAdminLoggedIn) {
-      setupAdminLoginForm();
-    }
+  if (avatarBtn) avatarBtn.addEventListener("click", openPicker);
+  if (pickerClose) pickerClose.addEventListener("click", closePicker);
+  if (pickerOverlay) pickerOverlay.addEventListener("click", e => { if (e.target === pickerOverlay) closePicker(); });
+
+  document.querySelectorAll(".avatar-emoji-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const emoji = btn.dataset.emoji;
+      closePicker();
+      if (emoji === "🚫") {
+        avatar.emoji = "🚫";
+        avatar.title = "";
+        saveAvatar();
+        applyAvatarToUI();
+        updateOwnMapMarker();
+      } else {
+        openNameSheet(emoji);
+      }
+    });
   });
+
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      avatar.emoji = "🚫";
+      avatar.title = "";
+      saveAvatar();
+      applyAvatarToUI();
+      updateOwnMapMarker();
+      closePicker();
+    });
+  }
+
+  if (nameClose)   nameClose.addEventListener("click", closeNameSheet);
+  if (nameOverlay) nameOverlay.addEventListener("click", e => { if (e.target === nameOverlay) closeNameSheet(); });
+
+  if (nameConfirm) {
+    nameConfirm.addEventListener("click", () => {
+      const rawName = nameInput.value.trim();
+      avatar.emoji = pendingEmoji;
+      avatar.title = rawName || randomAnimalName();
+      saveAvatar();
+      applyAvatarToUI();
+      closeNameSheet();
+      updateOwnMapMarker();
+    });
+  }
+  if (nameInput) {
+    nameInput.addEventListener("keypress", e => {
+      if (e.key === "Enter") nameConfirm && nameConfirm.click();
+    });
+  }
 }
 
 function initViewToggle() {
@@ -1940,6 +2164,7 @@ function initMap() {
   mainMarkersLayer = L.layerGroup().addTo(map);
   adminHighlightsLayer = L.layerGroup().addTo(map);
   streetNotesLayer = L.layerGroup().addTo(map);
+  peerLayer = L.layerGroup().addTo(map);
   
   // Add street highlights legend
   addStreetHighlightsLegend();
@@ -2798,7 +3023,9 @@ async function sendChatMessage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: message,
-        author: "Anonymous" // Could be enhanced with user names
+        author: avatar.title && avatar.emoji !== "🚫"
+          ? `${avatar.emoji} ${avatar.title}`
+          : "Anonymous",
       }),
     });
 
@@ -3782,11 +4009,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   initChipSelection("category-chips");
   initChipSelection("urgency-chips");
   initAdminModal();
+  initAvatarPicker();
   setupEditForm();
   initChat();
   initHighlightStreetModal();
   initStreetNoteModal();
   initCollapsibleHeader();
+  initPeerBroadcasting();
 
   await waitForBackend();
 
@@ -3812,6 +4041,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       updateUserMarkers();
       checkNearbyAlerts();
       updateActiveUsersCount();
+      broadcastOwnLocation();
       },
       () => {},
       { enableHighAccuracy: true, maximumAge: 60000 }

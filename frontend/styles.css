@@ -4272,3 +4272,120 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
     min-height: 100% !important;
   }
 }
+
+/* ── Avatar button ────────────────────────────────────────────────────────── */
+.avatar-btn {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  font-size: 1.25rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.18s, transform 0.12s;
+  padding: 0;
+}
+.avatar-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(1.08);
+}
+
+/* ── Avatar picker & name sheets ─────────────────────────────────────────── */
+.avatar-picker-sheet,
+.avatar-name-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(460px, 100vw);
+  max-height: 80dvh;
+  overflow-y: auto;
+  border-radius: 28px 28px 0 0;
+  background: var(--ui-surface-strong);
+  border: 1px solid var(--ui-border);
+  border-bottom: none;
+  box-shadow: 0 -20px 50px rgba(0,0,0,0.5);
+  backdrop-filter: var(--ui-blur);
+  -webkit-backdrop-filter: var(--ui-blur);
+  padding: 1.25rem 1.1rem calc(1.5rem + env(safe-area-inset-bottom));
+  z-index: 1500;
+}
+
+.avatar-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+.avatar-sheet-header h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--ui-text);
+}
+.avatar-sheet-hint {
+  font-size: 0.76rem;
+  color: var(--ui-muted);
+  margin: 0 0 1rem;
+}
+
+.avatar-emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.55rem;
+}
+
+.avatar-emoji-btn {
+  display: grid;
+  place-items: center;
+  font-size: 1.75rem;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 16px;
+  border: 2px solid transparent;
+  background: rgba(255,255,255,0.06);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  padding: 0;
+}
+.avatar-emoji-btn:hover {
+  background: rgba(255,255,255,0.14);
+  transform: scale(1.1);
+}
+.avatar-emoji-btn.active {
+  border-color: #2563eb;
+  background: rgba(37,99,235,0.18);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.22);
+}
+
+/* ── Peer emoji markers on the map ──────────────────────────────────────── */
+.peer-emoji-marker {
+  font-size: 1.65rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.55));
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  animation: peer-pop 0.25s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes peer-pop {
+  from { transform: scale(0.4); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+.peer-popup {
+  text-align: center;
+  padding: 0.2rem 0.3rem;
+}
+.peer-popup-emoji {
+  font-size: 1.5rem;
+  display: block;
+  margin-bottom: 0.2rem;
+}
+.peer-popup-you {
+  font-size: 0.72rem;
+  color: #9ca3af;
+}
