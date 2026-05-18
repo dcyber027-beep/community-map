@@ -154,11 +154,23 @@
             <label for="list-category-filter">Category</label>
             <select id="list-category-filter">
               <option value="">All</option>
-              <option value="protest">⚠️ Protest / Rally</option>
-              <option value="theft">💰 Theft / Robbery</option>
-              <option value="harassment">🚨 Harassment / Assault</option>
-              <option value="antisocial">😡 Anti-social Behaviour</option>
-              <option value="other">Other</option>
+              <optgroup label="Incidents">
+                <option value="protest">⚠️ Protest / Rally</option>
+                <option value="theft">💰 Theft / Robbery</option>
+                <option value="harassment">🚨 Harassment / Assault</option>
+                <option value="antisocial">😡 Anti-social Behaviour</option>
+                <option value="other">Other incident</option>
+              </optgroup>
+              <optgroup label="Street Notes">
+                <option value="note:all">All Street Notes</option>
+                <option value="note:💧">💧 Drinking Fountain</option>
+                <option value="note:🚽">🚽 Toilet</option>
+                <option value="note:☕">☕ Coffee</option>
+                <option value="note:🧋">🧋 Drink Deal</option>
+                <option value="note:🍜">🍜 Food</option>
+                <option value="note:🅿️">🅿️ Parking</option>
+                <option value="note:🎵">🎵 Music</option>
+              </optgroup>
             </select>
           </div>
           <div class="filter-group">

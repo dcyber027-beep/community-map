@@ -262,30 +262,42 @@ function renderMapMarkers() {
   });
 }
 
+function getListFilterState() {
+  const hours        = (() => { const v = document.getElementById("list-time-filter").value; return v ? parseInt(v, 10) : null; })();
+  const categoryRaw  = document.getElementById("list-category-filter").value || "";
+  const urgencyMode  = document.getElementById("list-urgency-filter").value || "";
+  const isNoteFilter = categoryRaw.startsWith("note:");
+  const noteEmoji    = isNoteFilter && categoryRaw !== "note:all" ? categoryRaw.slice(5) : null;
+  const incidentCat  = !isNoteFilter && categoryRaw !== "" ? categoryRaw : null;
+  return { hours, categoryRaw, urgencyMode, isNoteFilter, noteEmoji, incidentCat };
+}
+
 function filteredIncidentsForList() {
-  const timeSelect = document.getElementById("list-time-filter");
-  const categorySelect = document.getElementById("list-category-filter");
-  const urgencySelect = document.getElementById("list-urgency-filter");
-
-  const hours = timeSelect.value ? parseInt(timeSelect.value, 10) : null;
-  const category = categorySelect.value || null;
-  const urgencyMode = urgencySelect.value || null;
-
+  const { hours, incidentCat, urgencyMode, isNoteFilter } = getListFilterState();
+  // When user has chosen a note-specific filter, show no incidents
+  if (isNoteFilter) return [];
   return incidents.filter((inc) => {
-    const now = new Date();
-    const ts = new Date(inc.timestamp);
     if (hours != null) {
-      const cutoff = new Date(now.getTime() - hours * 60 * 60 * 1000);
-      if (ts < cutoff) return false;
+      const cutoff = new Date(Date.now() - hours * 3600000);
+      if (new Date(inc.timestamp) < cutoff) return false;
     }
-    if (category && inc.category !== category) return false;
+    if (incidentCat && inc.category !== incidentCat) return false;
     if (urgencyMode === "high" && inc.urgency !== "high") return false;
-    if (
-      urgencyMode === "medium-high" &&
-      !(inc.urgency === "high" || inc.urgency === "medium")
-    ) {
-      return false;
+    if (urgencyMode === "medium-high" && !(inc.urgency === "high" || inc.urgency === "medium")) return false;
+    return true;
+  });
+}
+
+function filteredNotesForList() {
+  const { hours, isNoteFilter, noteEmoji, incidentCat, urgencyMode } = getListFilterState();
+  // When an incident category is selected, hide notes; same when urgency filter is active
+  if (incidentCat || urgencyMode) return [];
+  return streetNotes.filter((note) => {
+    if (hours != null) {
+      const cutoff = new Date(Date.now() - hours * 3600000);
+      if (new Date(note.created_at) < cutoff) return false;
     }
+    if (noteEmoji && note.emoji !== noteEmoji) return false;
     return true;
   });
 }
@@ -296,13 +308,13 @@ function renderList() {
   const items = filteredIncidentsForList().sort(
     (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
   );
-  const noteItems = [...streetNotes].sort(
+  const noteItems = filteredNotesForList().sort(
     (a, b) => new Date(b.created_at) - new Date(a.created_at)
   );
 
   if (!items.length && !noteItems.length) {
     const empty = document.createElement("div");
-    empty.textContent = "No incidents or street notes in this time window.";
+    empty.textContent = "No results match the selected filters.";
     empty.style.fontSize = "0.85rem";
     empty.style.color = "#9ca3af";
     container.appendChild(empty);
