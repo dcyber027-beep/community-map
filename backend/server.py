@@ -715,6 +715,51 @@ async def update_welcome_notice(update: WelcomeNoticeRequest):
         "enabled": update.enabled
     }
 
+# ── Peer location (avatar markers on the map) ─────────────────────────────
+class PeerLocation(BaseModel):
+    id: str           # stable client-generated UUID (re-uses chatUserId)
+    emoji: str
+    title: str
+    lat: float
+    lng: float
+    ts: float         # JS Date.now() milliseconds
+
+PEER_TTL_SECONDS = 60  # remove a peer if not seen for 60 s
+
+@api_router.post("/peers")
+async def upsert_peer(peer: PeerLocation):
+    """Upsert a peer's live location. Called by the client every ~20 s."""
+    await db.peers.update_one(
+        {"id": peer.id},
+        {"$set": {
+            "id": peer.id,
+            "emoji": peer.emoji,
+            "title": peer.title,
+            "lat": peer.lat,
+            "lng": peer.lng,
+            "ts": peer.ts,
+            "updated_at": datetime.now(timezone.utc)
+        }},
+        upsert=True
+    )
+    return {"ok": True}
+
+@api_router.get("/peers")
+async def list_peers():
+    """Return all peers seen within the last PEER_TTL_SECONDS seconds."""
+    cutoff_ms = (datetime.now(timezone.utc).timestamp() - PEER_TTL_SECONDS) * 1000
+    peers = await db.peers.find(
+        {"ts": {"$gte": cutoff_ms}},
+        {"_id": 0}
+    ).to_list(500)
+    return peers
+
+@api_router.delete("/peers/{peer_id}")
+async def remove_peer(peer_id: str):
+    """Remove a peer's marker when they switch back to anonymous."""
+    await db.peers.delete_one({"id": peer_id})
+    return {"ok": True}
+
 # Include the router in the main app
 app.include_router(api_router)
 

@@ -1955,9 +1955,10 @@ function initAdminModal() {
 }
 
 // ── Peer location broadcasting ────────────────────────────────────────────────
-// We reuse the existing /api/chat/messages endpoint pattern but target /api/peers
-// which may not exist on the backend yet.  We store peers in localStorage as a
-// graceful-degradation approach and also POST to the backend when available.
+// Peers are stored in MongoDB via /api/peers.
+// Each client POSTs its own location every 20 s; GET returns all live peers.
+// localStorage is used only as a render cache so markers survive a brief
+// network hiccup between poll cycles.
 
 const PEERS_KEY = "communityMapPeers_v1";
 
@@ -1970,20 +1971,14 @@ function savePeerStore(store) {
 
 async function broadcastOwnLocation() {
   if (avatar.emoji === "🚫" || !userLocation) return;
-  const peerId = getChatUserId();
   const payload = {
-    id: peerId,
+    id: getChatUserId(),
     emoji: avatar.emoji,
-    title: avatar.title || "Stranger",
+    title: avatar.title || "Anonymous",
     lat: userLocation.lat,
     lng: userLocation.lng,
     ts: Date.now(),
   };
-  // Persist locally so same device works offline too
-  const store = getPeerStore();
-  store[peerId] = payload;
-  savePeerStore(store);
-  // Fire-and-forget to backend (endpoint may not exist yet; silently ignore 404)
   try {
     await fetch(`${API_BASE}/peers`, {
       method: "POST",
@@ -1991,16 +1986,21 @@ async function broadcastOwnLocation() {
       body: JSON.stringify(payload),
     });
   } catch (_) {}
+  // Also update local cache so own marker is instant
+  const store = getPeerStore();
+  store[payload.id] = payload;
+  savePeerStore(store);
   renderPeerMarkers();
 }
 
 async function fetchPeers() {
-  const store = getPeerStore();
   try {
     const res = await fetch(`${API_BASE}/peers`);
     if (res.ok) {
       const remote = await res.json();
       if (Array.isArray(remote)) {
+        // Replace local cache with fresh server data
+        const store = {};
         remote.forEach(p => { store[p.id] = p; });
         savePeerStore(store);
       }
@@ -2016,39 +2016,46 @@ function renderPeerMarkers() {
   const store = getPeerStore();
   const myId = getChatUserId();
   Object.values(store).forEach(peer => {
-    if (now - peer.ts > PEER_TTL_MS) return; // stale
+    if (now - peer.ts > PEER_TTL_MS) return; // stale fallback guard
+    const isMe = peer.id === myId;
     const icon = L.divIcon({
-      html: `<div class="peer-emoji-marker" title="${peer.title}">${peer.emoji}</div>`,
+      html: `<div class="peer-emoji-marker${isMe ? " peer-self" : ""}" title="${peer.title}">${peer.emoji}</div>`,
       className: "",
       iconSize: [40, 40],
       iconAnchor: [20, 20],
     });
-    const marker = L.marker([peer.lat, peer.lng], { icon, zIndexOffset: peer.id === myId ? 1000 : 500 });
-    marker.bindPopup(`<div class="peer-popup"><span class="peer-popup-emoji">${peer.emoji}</span><strong>${peer.title}</strong>${peer.id === myId ? '<br><span class="peer-popup-you">(you)</span>' : ''}</div>`, { maxWidth: 160 });
+    const marker = L.marker([peer.lat, peer.lng], { icon, zIndexOffset: isMe ? 1000 : 500 });
+    const label = isMe ? `${peer.title} <span class="peer-popup-you">(you)</span>` : peer.title;
+    marker.bindPopup(`<div class="peer-popup"><span class="peer-popup-emoji">${peer.emoji}</span><strong>${label}</strong></div>`, { maxWidth: 180 });
     peerLayer.addLayer(marker);
   });
 }
 
+async function removeSelfFromPeers() {
+  // Called when user switches back to 🚫 — removes own marker from server
+  try {
+    await fetch(`${API_BASE}/peers/${getChatUserId()}`, { method: "DELETE" });
+  } catch (_) {}
+  const store = getPeerStore();
+  delete store[getChatUserId()];
+  savePeerStore(store);
+  renderPeerMarkers();
+}
+
 function updateOwnMapMarker() {
-  // Remove stale self entry if avatar is 🚫
   if (avatar.emoji === "🚫") {
-    const store = getPeerStore();
-    delete store[getChatUserId()];
-    savePeerStore(store);
-    renderPeerMarkers();
+    removeSelfFromPeers();
     return;
   }
   broadcastOwnLocation();
 }
 
 function initPeerBroadcasting() {
-  // Broadcast every 20 s, fetch peers every 20 s
   peerLocationInterval = setInterval(() => {
     broadcastOwnLocation();
     fetchPeers();
   }, 20000);
-  // Initial fetch
-  fetchPeers();
+  fetchPeers(); // initial load of other users
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
