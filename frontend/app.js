@@ -263,23 +263,28 @@ function renderMapMarkers() {
 }
 
 function getListFilterState() {
-  const hours        = (() => { const v = document.getElementById("list-time-filter").value; return v ? parseInt(v, 10) : null; })();
-  const categoryRaw  = document.getElementById("list-category-filter").value || "";
-  const urgencyMode  = document.getElementById("list-urgency-filter").value || "";
+  const hours       = (() => { const v = document.getElementById("list-time-filter").value; return v ? parseInt(v, 10) : null; })();
+  const categoryRaw = document.getElementById("list-category-filter").value || "incidents";
+  const urgencyMode = document.getElementById("list-urgency-filter").value || "";
+
+  // Determine what the user wants to see
+  const showNotes    = categoryRaw === "all" || categoryRaw.startsWith("note:");
+  const showIncidents = categoryRaw !== "note:all" && !categoryRaw.startsWith("note:");
   const isNoteFilter = categoryRaw.startsWith("note:");
   const noteEmoji    = isNoteFilter && categoryRaw !== "note:all" ? categoryRaw.slice(5) : null;
-  const incidentCat  = !isNoteFilter && categoryRaw !== "" ? categoryRaw : null;
-  return { hours, categoryRaw, urgencyMode, isNoteFilter, noteEmoji, incidentCat };
+  // Specific incident category (not "all", "incidents", or note values)
+  const knownCategories = ["protest","theft","harassment","antisocial","other"];
+  const incidentCat = knownCategories.includes(categoryRaw) ? categoryRaw : null;
+
+  return { hours, categoryRaw, urgencyMode, showNotes, showIncidents, noteEmoji, incidentCat };
 }
 
 function filteredIncidentsForList() {
-  const { hours, incidentCat, urgencyMode, isNoteFilter } = getListFilterState();
-  // When user has chosen a note-specific filter, show no incidents
-  if (isNoteFilter) return [];
+  const { hours, showIncidents, incidentCat, urgencyMode } = getListFilterState();
+  if (!showIncidents) return [];
   return incidents.filter((inc) => {
     if (hours != null) {
-      const cutoff = new Date(Date.now() - hours * 3600000);
-      if (new Date(inc.timestamp) < cutoff) return false;
+      if (new Date(inc.timestamp) < new Date(Date.now() - hours * 3600000)) return false;
     }
     if (incidentCat && inc.category !== incidentCat) return false;
     if (urgencyMode === "high" && inc.urgency !== "high") return false;
@@ -289,13 +294,12 @@ function filteredIncidentsForList() {
 }
 
 function filteredNotesForList() {
-  const { hours, isNoteFilter, noteEmoji, incidentCat, urgencyMode } = getListFilterState();
-  // When an incident category is selected, hide notes; same when urgency filter is active
-  if (incidentCat || urgencyMode) return [];
+  const { hours, showNotes, noteEmoji, urgencyMode } = getListFilterState();
+  // Notes are never shown when urgency filter is active (notes have no urgency)
+  if (!showNotes || urgencyMode) return [];
   return streetNotes.filter((note) => {
     if (hours != null) {
-      const cutoff = new Date(Date.now() - hours * 3600000);
-      if (new Date(note.created_at) < cutoff) return false;
+      if (new Date(note.created_at) < new Date(Date.now() - hours * 3600000)) return false;
     }
     if (noteEmoji && note.emoji !== noteEmoji) return false;
     return true;
