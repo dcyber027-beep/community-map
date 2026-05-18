@@ -1079,13 +1079,13 @@ async function fetchLiveUpdates() {
     const response = await fetch(`${API_BASE}/live-updates`);
     if (response.ok) {
       const data = await response.json();
-      liveUpdatesContent = data.content || "Reports clear after 6 hours • Notifications for urgent incidents within 500m";
+      liveUpdatesContent = data.content || "Reports refresh every 6 h · Pick an emoji avatar to appear on the map · Tap the badge to chat";
       displayLiveUpdates();
     }
   } catch (error) {
     console.error("Failed to fetch live updates:", error);
     // Use default content
-    liveUpdatesContent = "Reports clear after 6 hours • Notifications for urgent incidents within 500m";
+    liveUpdatesContent = "Reports refresh every 6 h · Pick an emoji avatar to appear on the map · Tap the badge to chat";
     displayLiveUpdates();
   }
 }
@@ -3512,31 +3512,35 @@ async function fetchWelcomeNotice() {
     // Set default content if fetch fails
     if (!welcomeNoticeContent) {
       welcomeNoticeContent = `<h2>Welcome to Melbourne Community Map</h2>
-<p>Your friendly neighbourhood map for staying informed and helping each other out around Melbourne.</p>
+<p>A real-time community layer for Melbourne — see what's happening around you, share what you know, and stay connected with your neighbours.</p>
 
-<h3>🚨 Report Incidents</h3>
-<p>Spotted something the community should know about? Tap <strong>Report Incident</strong> to flag it on the map. Description is optional.</p>
+<h3>Report an Incident</h3>
+<p>Spotted something the community should know about? Tap <strong>Report Incident</strong> to pin it on the map. Category and urgency help others filter; description is optional.</p>
 
-<h3>📝 Street Notes</h3>
-<p>Share quick tips with your neighbours — where the nearest toilet is, a milk-tea deal, a busker worth checking out, and more.</p>
+<h3>Street Notes</h3>
+<p>Drop a quick tip for those nearby — a free drinking fountain, a toilet, cheap eats, a parking spot, live music, and more.</p>
 <ul>
-<li>Tap a quick-shortcut emoji to auto-fill your note (🚽 ☕ 🧋 🍜 🅿️ 🎵 ❤️ 😊)</li>
-<li>Choose how long it lasts — from 1 hour up to 3 days, or keep it forever</li>
+<li>Tap a shortcut emoji to auto-fill the note (💧 🚽 🧋 ☕ 🍜 🅿️ 🎵 and more)</li>
+<li>Set how long it lasts — 1 hour up to 3 days, or keep it forever</li>
 </ul>
 
-<h3>🗺️ Map Tricks</h3>
+<h3>Your Avatar</h3>
+<p>Tap the emoji button in the top-right corner to pick an animal avatar and set a title. Your emoji will appear on the map at your location so others can see you — tap any emoji marker to see their name.</p>
+
+<h3>Group Chat</h3>
+<p>Tap the active users badge in Live Updates to open the community group chat. Your avatar title appears as your name. Messages clear every 24 hours.</p>
+
+<h3>Map Tips</h3>
 <ul>
-<li>Tap the blue crosshair to centre the map on you</li>
-<li>Swipe up to hide the header for a fullscreen map view</li>
+<li>Tap the crosshair button to centre the map on your location</li>
+<li>Swipe up on the map to collapse the header for a fullscreen view</li>
+<li>Tap coloured street segments to read admin context notes</li>
 </ul>
 
-<h3>💬 Live Updates & Chat</h3>
-<p>Tap the active users badge to join the community group chat — messages clear every 24 hours.</p>
+<h3>Install as an App</h3>
+<p>Tap Share → Add to Home Screen (iOS) or Install App (Android/Chrome) for a native-app feel with offline support.</p>
 
-<h3>📲 Install it</h3>
-<p>Add this to your home screen for a native-app feel.</p>
-
-<p style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; font-size: 0.85rem; color: #6b7280;">In an emergency, always call <strong>000</strong> first. This app is for community awareness only.</p>`;
+<p style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.1);font-size:0.8rem;opacity:0.55;">In an emergency, always call <strong>000</strong> first. This app is for community awareness only — not an official emergency service.</p>`;
     }
   }
 }

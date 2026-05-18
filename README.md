@@ -1,6 +1,6 @@
 # Melbourne Community Map
 
-A community-driven safety awareness web app for Melbourne. Users can report incidents, drop short-lived street notes, chat in real time, and admins can highlight street segments with context. Installable as a PWA on mobile and desktop.
+A community-driven safety and awareness web app for Melbourne. Users can report incidents, drop short-lived street notes, pick an emoji avatar that appears on the map live, chat in real time, and admins can highlight street segments with context. Installable as a PWA on mobile and desktop.
 
 > **Live stack:** static frontend on **Netlify** · FastAPI backend on **Render** · **MongoDB Atlas** for data · **Leaflet + CARTO Voyager** for the map · GitHub-driven auto-deploy on every push to `main`.
 
@@ -26,13 +26,14 @@ A community-driven safety awareness web app for Melbourne. Users can report inci
 - See community-reported incidents on an interactive map (Leaflet) and a filterable list.
 - Filter by category (Protest, Theft, Harassment, Anti-social, Other), urgency, and time window (2h / 4h / 6h / 24h).
 - Report an incident with GPS, address search, or pin-drop on a mini-map. Description is optional. Photos can be attached and are compressed client-side.
-- Drop a **Street Note** — a short-lived community tip (water fountain, queue at a cafe, parking, etc.) with an optional emoji shortcut, an optional image, a custom duration slider (1 hour – 3 days), or a "Keep forever" toggle.
+- Drop a **Street Note** — a short-lived community tip (drinking fountain, water, toilet, parking, food deal, busker, etc.) with an optional emoji shortcut, an optional image, a custom duration slider (1 hour – 3 days), or a "Keep forever" toggle.
 - React to incidents (👍 / 👎).
+- **Choose an emoji avatar** (🐶 🐱 🐺 🦊 🦝 🦁 🐯 🐷 🐭 🐰 🐼 🐻 🐨 or anonymous 🚫) and set a **title** (display name). The avatar appears on the map at the user's GPS location; tapping it shows the title. The title is also used as the chat author name.
 - Join an anonymous community **Group Chat** linked to the live updates banner. Messages auto-clear every 24 hours.
 - See a "**Welcome Notice**" popup on every page load (closable, admin-editable).
 - Install the site as a **Progressive Web App** with offline shell support and an app icon on the home screen.
 
-**Admins (logged in via account + PIN) can:**
+**Admins (accessed by tapping the M logo 10 times) can:**
 - Edit / delete any incident, including ones submitted with verified contact info.
 - **Highlight street segments** with two pin-drops, a colour (Red / Yellow / Green), a reason, and a description. Users tap highlights to read the context.
 - Edit or delete street highlights at any time.
@@ -367,6 +368,7 @@ See `LEARNING.md` for a deeper learning roadmap (git, GitHub, bash, project layo
 
 ### Medium term (features)
 
+- **Peer location sync via backend** — add a `/api/peers` endpoint so emoji avatar markers sync across different devices in real time (currently client-side only via `localStorage`).
 - **Push notifications** — Web Push for nearby high-urgency incidents (opt-in only).
 - **User accounts (optional)** — magic-link or OAuth login so contributors can edit their own posts.
 - **Better clustering** — use MongoDB geospatial indexes (`2dsphere`) instead of in-memory Haversine for incident clustering at scale.
