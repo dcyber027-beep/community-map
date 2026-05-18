@@ -4427,3 +4427,28 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
   font-size: 0.72rem;
   color: #9ca3af;
 }
+
+/* ── Legal page back button ─────────────────────────────────────────────── */
+.legal-back-btn {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: 1px solid var(--ui-border);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ui-text);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.18s, transform 0.12s;
+  flex-shrink: 0;
+}
+.legal-back-btn:hover,
+.legal-back-btn:active {
+  background: rgba(255, 255, 255, 0.18);
+  transform: scale(1.08);
+}
+.legal-back-btn svg {
+  display: block;
+  flex-shrink: 0;
+}
