@@ -75,6 +75,7 @@ const PEER_TTL_MS = 45000; // remove peer after 45 s of silence
 // Emoji shortcut definitions for Street Notes
 const EMOJI_SHORTCUTS = [
   { emoji: "🚽", label: "Toilet", phrase: "There is a toilet here" },
+  { emoji: "💧", label: "Drinking fountain", phrase: "Free drinking fountain here — stay hydrated!" },
   { emoji: "🧋", label: "Drink deal", phrase: "Milk tea deal here" },
   { emoji: "☕", label: "Coffee", phrase: "Great coffee around here" },
   { emoji: "🍜", label: "Food", phrase: "Cheap eats nearby" },
