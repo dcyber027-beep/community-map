@@ -1339,6 +1339,24 @@ body {
   display: block;
 }
 
+/* View-switch slide transitions ------------------------------------------- */
+@keyframes slideInFromRight {
+  from { transform: translateX(32px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+@keyframes slideInFromLeft {
+  from { transform: translateX(-32px); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+
+.view-container.slide-from-right {
+  animation: slideInFromRight 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.view-container.slide-from-left {
+  animation: slideInFromLeft 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* -------------------------------------------------------------------------- */
+
 #map {
   width: 100%;
   height: calc(100vh - 280px);
@@ -1656,6 +1674,16 @@ body {
 /* .icon-button base/hover unified with .street-note-close above */
 
 /* Modals */
+@keyframes sheetSlideIn {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+@keyframes overlayFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 .modal,
 .modal-overlay {
   position: fixed;
@@ -1666,6 +1694,7 @@ body {
   z-index: 1100;
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(4px);
+  animation: overlayFadeIn 0.22s ease;
 }
 
 .modal.hidden,
@@ -3883,10 +3912,19 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
 }
 
 .report-modal-content,
+.chat-modal-content,
 .street-note-sheet {
-  width: min(430px, 100vw);
-  max-width: 430px;
+  width: min(460px, 100vw);
+  max-width: 460px;
   border-radius: 28px 28px 0 0;
+  animation: sheetSlideIn 0.34s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Align these sheet modals to the bottom of the viewport */
+#report-modal,
+#chat-modal {
+  align-items: flex-end;
+  justify-content: center;
 }
 
 .report-modal-header,

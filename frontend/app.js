@@ -2125,29 +2125,44 @@ function initAvatarPicker() {
 }
 
 function initViewToggle() {
-  const mapTab = document.getElementById("tab-map");
+  const mapTab  = document.getElementById("tab-map");
   const listTab = document.getElementById("tab-list");
-  const mapView = document.getElementById("view-map");
+  const mapView  = document.getElementById("view-map");
   const listView = document.getElementById("view-list");
 
+  // Map is "left", List is "right" conceptually
+  let currentView = "map";
+
+  function clearSlideClasses(el) {
+    el.classList.remove("slide-from-left", "slide-from-right");
+  }
+
   function activate(tab) {
+    if (tab === currentView) return;
+    const goingRight = tab === "list"; // map → list = slide in from right
+
     if (tab === "map") {
       mapTab.classList.add("active");
       listTab.classList.remove("active");
-      mapView.classList.add("active");
+      clearSlideClasses(mapView);
+      mapView.classList.add("active", "slide-from-left");
       listView.classList.remove("active");
-      if (map) {
-        setTimeout(() => map.invalidateSize(), 100);
-      }
+      if (map) setTimeout(() => map.invalidateSize(), 100);
     } else {
       listTab.classList.add("active");
       mapTab.classList.remove("active");
-      listView.classList.add("active");
+      clearSlideClasses(listView);
+      listView.classList.add("active", "slide-from-right");
       mapView.classList.remove("active");
     }
+
+    // Remove animation class after it plays so re-triggering works
+    const animated = tab === "map" ? mapView : listView;
+    animated.addEventListener("animationend", () => clearSlideClasses(animated), { once: true });
+    currentView = tab;
   }
 
-  mapTab.addEventListener("click", () => activate("map"));
+  mapTab.addEventListener("click",  () => activate("map"));
   listTab.addEventListener("click", () => activate("list"));
 }
 
