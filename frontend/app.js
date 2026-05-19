@@ -320,7 +320,7 @@ function renderList() {
     const empty = document.createElement("div");
     empty.textContent = "No results match the selected filters.";
     empty.style.fontSize = "0.85rem";
-    empty.style.color = "#9ca3af";
+    empty.style.color = "var(--ui-muted)";
     container.appendChild(empty);
     return;
   }
@@ -478,7 +478,7 @@ function renderList() {
       img.style.maxHeight = "150px";
       img.style.objectFit = "cover";
       img.style.borderRadius = "8px";
-      img.style.border = "1px solid #dbeafe";
+      img.style.border = "1px solid var(--ui-border)";
       imgWrap.appendChild(img);
       main.appendChild(imgWrap);
     }
@@ -508,10 +508,10 @@ function renderList() {
         setTimeout(() => {
           map.invalidateSize();
           const imageHtml = note.image_url
-            ? `<div style="margin-bottom: 0.5rem;"><img src="${note.image_url}" alt="Street note image" style="display:block; width:100%; max-width:220px; max-height:150px; object-fit:cover; border-radius:6px; border:1px solid #dbeafe;" /></div>`
+            ? `<div style="margin-bottom: 0.5rem;"><img src="${note.image_url}" alt="Street note image" style="display:block; width:100%; max-width:220px; max-height:150px; object-fit:cover; border-radius:6px; border:1px solid var(--ui-border);" /></div>`
             : "";
           const locationHtml = note.location_text
-            ? `<div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.5rem;">📍 ${note.location_text}</div>`
+            ? `<div style="font-size: 0.75rem; color: var(--ui-muted); margin-bottom: 0.5rem;">📍 ${note.location_text}</div>`
             : "";
           const expText = isForeverNote ? "Permanent" : formatRemainingTime(note.expires_at);
           const pBadge = isForeverNote ? '<span class="note-permanent-badge">PERMANENT</span>' : '';
@@ -521,8 +521,8 @@ function renderList() {
               <div style="max-width: 240px; padding: 0.25rem;">
                 ${imageHtml}
                 ${locationHtml}
-                <div style="font-size: 0.9375rem; color: #1f2937; line-height: 1.5; margin-bottom: 0.5rem;">${note.text}${pBadge}</div>
-                <div style="font-size: 0.75rem; color: #9ca3af;">${humanTimeAgo(note.created_at)} &middot; ${expText}</div>
+                <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${note.text}${pBadge}</div>
+                <div style="font-size: 0.75rem; color: var(--ui-muted);">${humanTimeAgo(note.created_at)} &middot; ${expText}</div>
               </div>
             `)
             .openOn(map);
@@ -666,8 +666,8 @@ async function openDetailModal(incident) {
           : ""
       }
     </div>
-    <div class="reaction-section" style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid #e5e7eb;">
-      <div style="font-size:0.875rem; color:#6b7280; margin-bottom:0.75rem;">Did you see this too?</div>
+    <div class="reaction-section" style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--ui-border);">
+      <div class="reaction-section-label">Did you see this too?</div>
       <div class="reaction-buttons">
         <button id="detail-like-btn" class="reaction-btn reaction-like ${likeActive}" ${likeDisabled} type="button">
           <span class="reaction-icon">👍</span>
@@ -1474,7 +1474,7 @@ async function renderAdminDashboard() {
     adminBody.innerHTML = `
       <div class='error-text'>
         <p>Unable to load incidents for admin.</p>
-        <p style="font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem;">
+        <p style="font-size: 0.875rem; color: var(--ui-muted); margin-top: 0.5rem;">
           ${e.message || "Please check your backend server is running."}
         </p>
         <button onclick="location.reload()" style="margin-top: 1rem; padding: 0.5rem 1rem; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer;">
@@ -1619,18 +1619,18 @@ async function renderAdminStreetHighlightsSection(dashboard) {
     
     const highlightsSection = document.createElement("div");
     highlightsSection.className = "admin-highlights-section";
-    highlightsSection.style.cssText = "margin-top: 2rem; padding-top: 2rem; border-top: 2px solid #e5e7eb;";
+    highlightsSection.style.cssText = "margin-top: 2rem; padding-top: 2rem; border-top: 2px solid var(--ui-border);";
     
     const sectionHeader = document.createElement("div");
     sectionHeader.style.cssText = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;";
     
     const sectionTitle = document.createElement("h2");
     sectionTitle.textContent = "Street Highlights";
-    sectionTitle.style.cssText = "font-size: 1.25rem; font-weight: 600; color: #1f2937; margin: 0;";
+    sectionTitle.style.cssText = "font-size: 1.25rem; font-weight: 600; color: var(--ui-text); margin: 0;";
     
     const highlightsCount = document.createElement("div");
     highlightsCount.textContent = `${highlights.length} Highlight${highlights.length !== 1 ? 's' : ''}`;
-    highlightsCount.style.cssText = "font-size: 0.875rem; color: #6b7280;";
+    highlightsCount.style.cssText = "font-size: 0.875rem; color: var(--ui-muted);";
     
     sectionHeader.appendChild(sectionTitle);
     sectionHeader.appendChild(highlightsCount);
@@ -1639,7 +1639,7 @@ async function renderAdminStreetHighlightsSection(dashboard) {
     if (highlights.length === 0) {
       const emptyMsg = document.createElement("div");
       emptyMsg.textContent = "No street highlights yet. Click 'Highlight a Street' to create one.";
-      emptyMsg.style.cssText = "text-align: center; padding: 2rem; color: #9ca3af;";
+      emptyMsg.style.cssText = "text-align: center; padding: 2rem; color: var(--ui-muted);";
       highlightsSection.appendChild(emptyMsg);
     } else {
       const highlightsList = document.createElement("div");
@@ -1647,7 +1647,7 @@ async function renderAdminStreetHighlightsSection(dashboard) {
       
       highlights.forEach((highlight) => {
         const highlightCard = document.createElement("div");
-        highlightCard.style.cssText = "background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;";
+        highlightCard.style.cssText = "background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: 8px; padding: 1rem;";
         
         const reasonLabels = {
           "poor_lighting": "💡 Poor Lighting",
@@ -1669,8 +1669,8 @@ async function renderAdminStreetHighlightsSection(dashboard) {
         highlightCard.innerHTML = `
           <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
             <div>
-              <div style="font-weight: 600; color: #1f2937; margin-bottom: 0.25rem;">${reasonLabels[highlight.reason] || highlight.reason}</div>
-              <div style="font-size: 0.875rem; color: #6b7280;">${colorLabels[highlight.color] || highlight.color}</div>
+              <div style="font-weight: 600; color: var(--ui-text); margin-bottom: 0.25rem;">${reasonLabels[highlight.reason] || highlight.reason}</div>
+              <div style="font-size: 0.875rem; color: var(--ui-muted);">${colorLabels[highlight.color] || highlight.color}</div>
             </div>
             <div style="display: flex; gap: 0.5rem;">
               <button class="admin-edit-highlight-btn" data-id="${highlight.id}" data-color="${highlight.color || 'yellow'}" data-reason="${highlight.reason || 'other'}" data-description="${escapedDescription}" style="background: #3b82f6; color: white; border: none; border-radius: 6px; padding: 0.375rem 0.75rem; font-size: 0.75rem; cursor: pointer; font-weight: 500;">
@@ -1681,8 +1681,8 @@ async function renderAdminStreetHighlightsSection(dashboard) {
               </button>
             </div>
           </div>
-          ${highlight.description ? `<div style="font-size: 0.875rem; color: #374151; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e5e7eb;">${highlight.description}</div>` : ''}
-          <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 0.5rem;">
+          ${highlight.description ? `<div style="font-size: 0.875rem; color: var(--ui-soft); margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--ui-border);">${highlight.description}</div>` : ''}
+          <div style="font-size: 0.75rem; color: var(--ui-muted); margin-top: 0.5rem;">
             Created: ${new Date(highlight.created_at).toLocaleString()}
           </div>
         `;
@@ -1742,19 +1742,19 @@ async function renderAdminStreetNotesSection(dashboard) {
 
     const section = document.createElement("div");
     section.className = "admin-notes-section";
-    section.style.cssText = "margin-top: 2rem; padding-top: 2rem; border-top: 2px solid #e5e7eb;";
+    section.style.cssText = "margin-top: 2rem; padding-top: 2rem; border-top: 2px solid var(--ui-border);";
 
     const header = document.createElement("div");
     header.style.cssText = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;";
 
     const title = document.createElement("h2");
     title.textContent = "Street Notes";
-    title.style.cssText = "font-size: 1.25rem; font-weight: 600; color: #1f2937; margin: 0;";
+    title.style.cssText = "font-size: 1.25rem; font-weight: 600; color: var(--ui-text); margin: 0;";
 
     const foreverCount = notes.filter(n => n.forever || !n.expires_at).length;
     const count = document.createElement("div");
     count.textContent = `${notes.length} note${notes.length !== 1 ? "s" : ""}${foreverCount ? ` (${foreverCount} permanent)` : ""}`;
-    count.style.cssText = "font-size: 0.875rem; color: #6b7280;";
+    count.style.cssText = "font-size: 0.875rem; color: var(--ui-muted);";
 
     header.appendChild(title);
     header.appendChild(count);
@@ -1763,7 +1763,7 @@ async function renderAdminStreetNotesSection(dashboard) {
     if (!notes.length) {
       const empty = document.createElement("div");
       empty.textContent = "No street notes posted.";
-      empty.style.cssText = "font-size: 0.875rem; color: #9ca3af; padding: 1rem; text-align: center; background: #f9fafb; border-radius: 8px;";
+      empty.style.cssText = "font-size: 0.875rem; color: var(--ui-muted); padding: 1rem; text-align: center; background: var(--ui-panel); border-radius: 8px;";
       section.appendChild(empty);
       dashboard.appendChild(section);
       return;
@@ -1778,26 +1778,26 @@ async function renderAdminStreetNotesSection(dashboard) {
       const expText = isForeverN ? "Permanent" : formatRemainingTime(note.expires_at);
       const emojiIcon = note.emoji || "📝";
       const imgHtml = note.image_url
-        ? `<img src="${note.image_url}" style="max-width:120px;max-height:80px;object-fit:cover;border-radius:6px;margin-top:0.5rem;border:1px solid #e5e7eb;" />`
+        ? `<img src="${note.image_url}" style="max-width:120px;max-height:80px;object-fit:cover;border-radius:6px;margin-top:0.5rem;border:1px solid var(--ui-border);" />`
         : "";
       const locHtml = note.location_text
-        ? `<div style="font-size:0.75rem;color:#6b7280;">📍 ${note.location_text}</div>`
+        ? `<div style="font-size:0.75rem;color:var(--ui-muted);">📍 ${note.location_text}</div>`
         : "";
       const badge = isForeverN ? '<span class="note-permanent-badge">PERMANENT</span>' : '';
 
       const card = document.createElement("div");
-      card.style.cssText = "background: #fff; border: 1px solid #e5e7eb; border-left: 4px solid #1E88E5; border-radius: 8px; padding: 0.875rem;";
+      card.style.cssText = "background: var(--ui-surface-strong); border: 1px solid var(--ui-border); border-left: 4px solid #1E88E5; border-radius: 8px; padding: 0.875rem;";
       card.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">
           <div style="flex:1;min-width:0;">
             <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">
               <span style="font-size:1.25rem;">${emojiIcon}</span>
-              <strong style="font-size:0.9rem;color:#1f2937;">Street Note</strong>
+              <strong style="font-size:0.9rem;color:var(--ui-text);">Street Note</strong>
               ${badge}
             </div>
-            <div style="font-size:0.875rem;color:#374151;margin-bottom:0.25rem;">${note.text}</div>
+            <div style="font-size:0.875rem;color:var(--ui-soft);margin-bottom:0.25rem;">${note.text}</div>
             ${locHtml}
-            <div style="font-size:0.7rem;color:#9ca3af;margin-top:0.25rem;">${humanTimeAgo(note.created_at)} • ${expText}</div>
+            <div style="font-size:0.7rem;color:var(--ui-muted);margin-top:0.25rem;">${humanTimeAgo(note.created_at)} • ${expText}</div>
             ${imgHtml}
           </div>
           <button type="button" class="admin-delete-note-btn" data-note-id="${note.id}" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:0.375rem 0.75rem;font-size:0.75rem;font-weight:600;cursor:pointer;flex-shrink:0;">
@@ -2306,9 +2306,9 @@ function showHighlightDescription(highlight) {
     .setLatLng([midLat, midLng])
     .setContent(`
       <div style="padding: 0.5rem; max-width: 280px;">
-        <div style="font-weight: 600; margin-bottom: 0.5rem; color: #1f2937;">${reasonText}</div>
-        <div style="font-size: 0.875rem; color: #4b5563; line-height: 1.5;">${description}</div>
-        <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 0.5rem;">
+        <div style="font-weight: 600; margin-bottom: 0.5rem; color: var(--ui-text);">${reasonText}</div>
+        <div style="font-size: 0.875rem; color: var(--ui-soft); line-height: 1.5;">${description}</div>
+        <div style="font-size: 0.75rem; color: var(--ui-muted); margin-top: 0.5rem;">
           Highlighted by admin
         </div>
       </div>
@@ -2323,7 +2323,7 @@ function addStreetHighlightsLegend() {
   
   legend.onAdd = function() {
     const div = L.DomUtil.create("div", "street-highlights-legend");
-    div.style.cssText = "background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(8px); padding: 0.375rem 0.5rem; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 0.6875rem; line-height: 1.3; min-width: 140px; max-width: 160px; z-index: 1000;";
+    div.style.cssText = "padding: 0.375rem 0.5rem; font-size: 0.6875rem; line-height: 1.3; min-width: 140px; max-width: 160px; z-index: 1000;";
     div.innerHTML = `
       <div style="font-weight: 600; margin-bottom: 0.25rem; font-size: 0.75rem;">Street Highlights</div>
       <div style="display: flex; align-items: center; margin-bottom: 0.1875rem;">
@@ -2338,7 +2338,7 @@ function addStreetHighlightsLegend() {
         <div style="width: 18px; height: 2.5px; background: #22c55e; border-radius: 1px; margin-right: 0.375rem; flex-shrink: 0;"></div>
         <span style="font-size: 0.6875rem; line-height: 1.2;">Low concern</span>
       </div>
-      <div style="font-size: 0.625rem; color: #6b7280; border-top: 1px solid rgba(229, 231, 235, 0.5); padding-top: 0.25rem; margin-top: 0.25rem; line-height: 1.2;">
+      <div class="map-popup__divider">
         Tap segments for details
       </div>
     `;
@@ -2457,10 +2457,10 @@ function renderStreetNotes() {
     const expiryText = isForever ? "Permanent" : formatRemainingTime(note.expires_at);
     const permBadge = isForever ? '<span class="note-permanent-badge">PERMANENT</span>' : '';
     const imageHtml = note.image_url
-      ? `<div style="margin-bottom: 0.5rem;"><img src="${note.image_url}" alt="Street note image" style="display:block; width:100%; max-width:200px; max-height:140px; object-fit:cover; border-radius: 6px; border: 1px solid #dbeafe;" /></div>`
+      ? `<div style="margin-bottom: 0.5rem;"><img src="${note.image_url}" alt="Street note image" style="display:block; width:100%; max-width:200px; max-height:140px; object-fit:cover; border-radius: 6px; border: 1px solid var(--ui-border);" /></div>`
       : "";
     const locationHtml = note.location_text
-      ? `<div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.5rem;">📍 ${note.location_text}</div>`
+      ? `<div style="font-size: 0.75rem; color: var(--ui-muted); margin-bottom: 0.5rem;">📍 ${note.location_text}</div>`
       : "";
     const adminDeleteHtml = isAdminLoggedIn
       ? `<div style="margin-top: 0.5rem;"><button type="button" class="note-admin-delete" data-note-id="${note.id}">🗑️ Delete note</button></div>`
@@ -2469,8 +2469,8 @@ function renderStreetNotes() {
       <div style="max-width: 220px; padding: 0.25rem;">
         ${imageHtml}
         ${locationHtml}
-        <div style="font-size: 0.9375rem; color: #1f2937; line-height: 1.5; margin-bottom: 0.5rem;">${note.text}${permBadge}</div>
-        <div style="font-size: 0.75rem; color: #9ca3af;">${timeAgo} &middot; ${expiryText}</div>
+        <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${note.text}${permBadge}</div>
+        <div style="font-size: 0.75rem; color: var(--ui-muted);">${timeAgo} &middot; ${expiryText}</div>
         ${adminDeleteHtml}
       </div>
     `);
@@ -3676,7 +3676,7 @@ async function showEditWelcomeNoticeModal() {
     <div class="highlight-form" style="padding: 1.5rem;">
       <div class="highlight-section">
         <label class="highlight-label">Welcome Notice Content *</label>
-        <p style="font-size: 0.8125rem; color: #6b7280; margin-bottom: 0.75rem;">
+        <p style="font-size: 0.8125rem; color: var(--ui-muted); margin-bottom: 0.75rem;">
           HTML is supported. This notice will appear to first-time visitors.
         </p>
         <textarea
@@ -3735,7 +3735,7 @@ async function showEditWelcomeNoticeModal() {
 <h3>📲 Install on your home screen</h3>
 <p>For the full experience, add this app to your home screen — it opens like a native app, no browser bars.</p>
 
-<p style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; font-size: 0.85rem; color: #6b7280;">In an emergency, always call <strong>000</strong> first. This app is for community awareness only.</p>`;
+<p style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--ui-border); font-size: 0.85rem; color: var(--ui-muted);">In an emergency, always call <strong>000</strong> first. This app is for community awareness only.</p>`;
   
   textarea.value = welcomeNoticeContent || defaultContent;
   enabledCheckbox.checked = welcomeNoticeEnabled !== false;
