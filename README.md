@@ -32,6 +32,7 @@ A community-driven safety and awareness web app for Melbourne. Users can report 
 - Join an anonymous community **Group Chat** linked to the live updates banner. Messages auto-clear every 24 hours.
 - See a "**Welcome Notice**" popup on every page load (closable, admin-editable).
 - Install the site as a **Progressive Web App** with offline shell support and an app icon on the home screen.
+- Use the app in **light or dark mode** — the UI automatically follows your device or browser theme (`prefers-color-scheme`), with readable text and consistent frosted-glass panels on the map in both modes.
 
 **Admins (accessed by tapping the M logo 10 times) can:**
 - Edit / delete any incident, including ones submitted with verified contact info.
@@ -105,6 +106,7 @@ A community-driven safety and awareness web app for Melbourne. Users can report 
 | Map library          | Leaflet             | Free, mature, full control, works with any tile source.                 |
 | Map tiles            | CARTO Voyager       | Google-Maps-like look, free, no API key, retina-ready, CDN-hosted.      |
 | PWA shell            | manifest.json + sw.js | Native-app feel on phones without an App Store release.               |
+| Theming              | CSS custom properties | Light/dark mode via `prefers-color-scheme`; frosted glass map overlays. |
 
 ---
 
@@ -120,7 +122,7 @@ EmergentApp1/
 ├── frontend/                  # Static site root (Netlify publish dir)
 │   ├── index.html             # App shell, modals, PWA meta tags
 │   ├── app.js                 # All client logic (map, modals, API calls, PWA)
-│   ├── styles.css             # Full UI styling, mobile-first, collapsible header
+│   ├── styles.css             # Full UI styling, mobile-first, light/dark theme tokens, frosted glass map chrome
 │   ├── manifest.json          # PWA manifest (name, icons, theme, standalone)
 │   ├── sw.js                  # Service worker — caches static shell, network-first for /api
 │   ├── _headers               # Netlify headers (Service-Worker-Allowed, manifest MIME)
@@ -310,6 +312,7 @@ The frontend is a single-page vanilla-JS app. Key concepts:
 - **`API_BASE`** at the top of `app.js` switches between `localhost:8000` and the deployed Render URL based on hostname.
 - **Leaflet** powers the main map, the location-picker mini-map in the report modal, and the highlight-drawing mini-map in the admin modal. All three use **CARTO Voyager** tiles.
 - **PWA**: `manifest.json` declares `display: standalone`; `sw.js` precaches the app shell and uses a network-first strategy for `/api/*` so users always see fresh data when online but a usable shell when offline.
+- **Light / dark mode**: `styles.css` defines shared theme tokens (`--ui-text`, `--ui-glass`, etc.) with a light default and a dark palette under `@media (prefers-color-scheme: dark)`. The map’s floating UI (header, nav, live updates, legend, controls, popups) uses frosted glass in both modes. Map popups and dynamic HTML in `app.js` use CSS variables so text stays readable on dark or light backgrounds. There is no in-app theme toggle yet — the app follows the OS/browser setting.
 - **Collapsible header** on mobile hides the header when scrolling down to maximise map area; an exit-fullscreen button appears in map view.
 - **Loading overlay** appears only if the backend takes more than a second to respond (Render cold start), so warm boots feel instant.
 - **Welcome notice** shows on every page load (configurable to once-per-session in future).
@@ -362,13 +365,14 @@ See `LEARNING.md` for a deeper learning roadmap (git, GitHub, bash, project layo
 
 - **Tighten CORS** — change `CORS_ORIGINS` from `*` to the exact Netlify domain on Render.
 - **Cold-start mitigation** — add a free UptimeRobot ping every 10 minutes so the Render backend rarely sleeps.
-- **Service-worker versioning** — bump `CACHE_NAME` on every deploy so users get fresh assets without manual unregister.
+- **Service-worker versioning** — bump `CACHE_NAME` in `sw.js` on every deploy so users get fresh assets without manual unregister (already done in practice; keep the habit).
 - **Error reporting** — add Sentry (free tier) on both frontend and backend.
 - **Lighthouse pass** — audit PWA / accessibility / performance and fix the easy wins.
 
 ### Medium term (features)
 
 - **Peer location sync via backend** — add a `/api/peers` endpoint so emoji avatar markers sync across different devices in real time (currently client-side only via `localStorage`).
+- **In-app theme toggle** — optional manual light/dark switch in the header (currently follows system `prefers-color-scheme` only).
 - **Push notifications** — Web Push for nearby high-urgency incidents (opt-in only).
 - **User accounts (optional)** — magic-link or OAuth login so contributors can edit their own posts.
 - **Better clustering** — use MongoDB geospatial indexes (`2dsphere`) instead of in-memory Haversine for incident clustering at scale.
