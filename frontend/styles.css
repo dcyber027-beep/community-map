@@ -3029,12 +3029,6 @@ body.header-collapsed .exit-fullscreen-btn {
   --ui-toggle-track: rgba(15, 23, 42, 0.06);
   --ui-chip-fill: rgba(15, 23, 42, 0.04);
   --ui-overlay: rgba(15, 23, 42, 0.45);
-  --ui-live-bg: linear-gradient(
-    135deg,
-    rgba(34, 197, 94, 0.16),
-    rgba(255, 255, 255, 0.42)
-  );
-  --ui-live-border: rgba(34, 197, 94, 0.28);
   --ui-emergency-bg: linear-gradient(135deg, rgba(239, 35, 60, 0.94), rgba(185, 28, 28, 0.9));
   --ui-grad-blue: rgba(37, 99, 235, 0.1);
   --ui-grad-red: rgba(239, 35, 60, 0.08);
@@ -3075,12 +3069,6 @@ body.header-collapsed .exit-fullscreen-btn {
     --ui-toggle-track: rgba(255, 255, 255, 0.07);
     --ui-chip-fill: rgba(255, 255, 255, 0.06);
     --ui-overlay: rgba(2, 6, 23, 0.62);
-    --ui-live-bg: linear-gradient(
-      135deg,
-      rgba(34, 197, 94, 0.22),
-      rgba(15, 23, 42, 0.48)
-    );
-    --ui-live-border: rgba(34, 197, 94, 0.32);
     --ui-emergency-bg: linear-gradient(135deg, rgba(239, 35, 60, 0.5), rgba(15, 23, 42, 0.54));
     --ui-grad-blue: rgba(37, 99, 235, 0.2);
     --ui-grad-red: rgba(239, 35, 60, 0.16);
@@ -3282,6 +3270,7 @@ body:has(#view-map.view-container.active) .leaflet-popup-content-wrapper {
 
 .app-shell:has(#view-map.view-container.active) .app-header,
 .app-shell:has(#view-map.view-container.active) .app-navigation,
+.app-shell:has(#view-map.view-container.active) .live-updates-banner,
 .app-shell:has(#view-map.view-container.active) .active-users-badge,
 body:has(#view-map.view-container.active) .app-shell > .legal-links,
 body:has(#view-map.view-container.active) .leaflet-control-zoom a,
@@ -3290,10 +3279,6 @@ body:has(#view-map.view-container.active) .exit-fullscreen-btn a,
 body:has(#view-map.view-container.active) .notes-toggle-container,
 body:has(#view-map.view-container.active) .street-highlights-legend {
   background: var(--ui-glass) !important;
-}
-
-.app-shell:has(#view-map.view-container.active) .live-updates-banner {
-  background: var(--ui-live-bg) !important;
 }
 
 body:has(#view-map.view-container.active) .leaflet-popup-content-wrapper {
@@ -3512,9 +3497,9 @@ body.header-collapsed:has(#view-map.view-container.active) .exit-fullscreen-btn 
   max-height: 150px;
   margin: 0;
   padding: 0.72rem;
-  border: 1px solid var(--ui-live-border);
+  border: 1px solid var(--ui-border);
   border-radius: 20px;
-  background: var(--ui-live-bg);
+  background: var(--ui-glass);
   box-shadow: var(--ui-shadow);
   backdrop-filter: var(--ui-blur);
   -webkit-backdrop-filter: var(--ui-blur);
