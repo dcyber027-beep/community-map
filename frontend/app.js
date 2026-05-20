@@ -63,7 +63,10 @@ let selectedHighlightColor = "yellow"; // Default color
 let selectedHighlightReason = "other"; // Default reason
 let streetNotes = []; // Store street notes
 let streetNotesLayer = null; // Layer for street note markers
+let cityDrinkingFountains = []; // City of Melbourne official fountain locations
+let cityFountainsLayer = null;
 let showStreetNotes = true; // Toggle for showing/hiding street notes
+let showCityFountains = true; // Toggle for official drinking fountain markers
 let streetNoteLocation = null; // Selected location for Street Note modal
 
 // Peer-location layer — emoji markers for other users and self
@@ -89,6 +92,8 @@ const EMOJI_SHORTCUTS = [
   { emoji: "🫣", label: "Awkward", phrase: "Awkward moment..." },
   { emoji: "😭", label: "Upset", phrase: "Really upset right now" },
 ];
+// Hidden in list "All" / "All Street Notes" until their category is selected
+const LIST_UTILITY_NOTE_EMOJIS = new Set(["💧", "🚽"]);
 let selectedNoteEmoji = null;
 let lastAutofilledPhrase = null;
 let noteDurationHours = 12;
@@ -294,16 +299,40 @@ function filteredIncidentsForList() {
 }
 
 function filteredNotesForList() {
-  const { hours, showNotes, noteEmoji, urgencyMode } = getListFilterState();
+  const { hours, showNotes, noteEmoji, urgencyMode, categoryRaw } = getListFilterState();
   // Notes are never shown when urgency filter is active (notes have no urgency)
   if (!showNotes || urgencyMode) return [];
+  const hideUtilityNotes =
+    !noteEmoji && (categoryRaw === "all" || categoryRaw === "note:all");
   return streetNotes.filter((note) => {
     if (hours != null) {
       if (new Date(note.created_at) < new Date(Date.now() - hours * 3600000)) return false;
     }
+    if (hideUtilityNotes && LIST_UTILITY_NOTE_EMOJIS.has(note.emoji)) return false;
     if (noteEmoji && note.emoji !== noteEmoji) return false;
     return true;
   });
+}
+
+function cityFountainToListItem(fountain) {
+  return {
+    id: fountain.id,
+    emoji: fountain.emoji || "💧",
+    text: fountain.description,
+    latitude: fountain.lat,
+    longitude: fountain.lng,
+    location_text: "",
+    created_at: null,
+    forever: true,
+    isCityReference: true,
+    source: fountain.source || "City of Melbourne",
+  };
+}
+
+function filteredCityFountainsForList() {
+  const { noteEmoji, urgencyMode } = getListFilterState();
+  if (urgencyMode || noteEmoji !== "💧") return [];
+  return cityDrinkingFountains.map(cityFountainToListItem);
 }
 
 function renderList() {
@@ -312,9 +341,17 @@ function renderList() {
   const items = filteredIncidentsForList().sort(
     (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
   );
-  const noteItems = filteredNotesForList().sort(
-    (a, b) => new Date(b.created_at) - new Date(a.created_at)
-  );
+  const noteItems = [
+    ...filteredNotesForList(),
+    ...filteredCityFountainsForList(),
+  ].sort((a, b) => {
+    if (a.isCityReference && !b.isCityReference) return 1;
+    if (!a.isCityReference && b.isCityReference) return -1;
+    if (a.isCityReference && b.isCityReference) {
+      return (a.text || "").localeCompare(b.text || "");
+    }
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
 
   if (!items.length && !noteItems.length) {
     const empty = document.createElement("div");
@@ -447,12 +484,14 @@ function renderList() {
 
     const title = document.createElement("div");
     title.className = "incident-title";
-    title.textContent = "Street Note";
+    title.textContent = note.isCityReference ? "Drinking Fountain" : "Street Note";
 
     const isForeverNote = note.forever || !note.expires_at;
     const metaLine = document.createElement("div");
     metaLine.className = "incident-meta";
-    metaLine.textContent = `${humanTimeAgo(note.created_at)} • ${isForeverNote ? "Permanent" : formatRemainingTime(note.expires_at)}`;
+    metaLine.textContent = note.isCityReference
+      ? `Official · ${note.source || "City of Melbourne"}`
+      : `${humanTimeAgo(note.created_at)} • ${isForeverNote ? "Permanent" : formatRemainingTime(note.expires_at)}`;
 
     const location = document.createElement("div");
     location.className = "incident-location";
@@ -514,7 +553,10 @@ function renderList() {
             ? `<div style="font-size: 0.75rem; color: var(--ui-muted); margin-bottom: 0.5rem;">📍 ${note.location_text}</div>`
             : "";
           const expText = isForeverNote ? "Permanent" : formatRemainingTime(note.expires_at);
-          const pBadge = isForeverNote ? '<span class="note-permanent-badge">PERMANENT</span>' : '';
+          const pBadge = isForeverNote && !note.isCityReference ? '<span class="note-permanent-badge">PERMANENT</span>' : '';
+          const metaHtml = note.isCityReference
+            ? `<div style="font-size: 0.75rem; color: var(--ui-muted);">Official · ${note.source || "City of Melbourne"}</div>`
+            : `<div style="font-size: 0.75rem; color: var(--ui-muted);">${humanTimeAgo(note.created_at)} &middot; ${expText}</div>`;
           L.popup()
             .setLatLng([note.latitude, note.longitude])
             .setContent(`
@@ -522,7 +564,7 @@ function renderList() {
                 ${imageHtml}
                 ${locationHtml}
                 <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${note.text}${pBadge}</div>
-                <div style="font-size: 0.75rem; color: var(--ui-muted);">${humanTimeAgo(note.created_at)} &middot; ${expText}</div>
+                ${metaHtml}
               </div>
             `)
             .openOn(map);
@@ -2202,6 +2244,7 @@ function initMap() {
   }).addTo(map);
   mainMarkersLayer = L.layerGroup().addTo(map);
   adminHighlightsLayer = L.layerGroup().addTo(map);
+  cityFountainsLayer = L.layerGroup().addTo(map);
   streetNotesLayer = L.layerGroup().addTo(map);
   peerLayer = L.layerGroup().addTo(map);
   
@@ -2216,6 +2259,9 @@ function initMap() {
   
   // Load and render admin street highlights
   fetchAdminStreetHighlights();
+  
+  // Official City of Melbourne drinking fountains
+  loadCityDrinkingFountains();
   
   // Load and render street notes
   fetchStreetNotes();
@@ -2431,6 +2477,41 @@ async function fetchStreetNotes() {
   }
 }
 
+async function loadCityDrinkingFountains() {
+  try {
+    const response = await fetch("/data/melbourne-drinking-fountains.json");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    cityDrinkingFountains = await response.json();
+    renderCityDrinkingFountains();
+    renderList();
+  } catch (error) {
+    console.error("Failed to load city drinking fountains:", error);
+  }
+}
+
+function renderCityDrinkingFountains() {
+  if (!cityFountainsLayer) return;
+  cityFountainsLayer.clearLayers();
+  if (!showCityFountains) return;
+
+  cityDrinkingFountains.forEach((fountain) => {
+    const icon = L.divIcon({
+      className: "city-fountain-pin",
+      html: `<div style="background:#e3f2fd;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid #1565c0;box-shadow:0 1px 4px rgba(0,0,0,0.25);font-size:14px;">💧</div>`,
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
+    });
+    const marker = L.marker([fountain.lat, fountain.lng], { icon });
+    marker.bindPopup(`
+      <div style="max-width: 240px; padding: 0.25rem;">
+        <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${fountain.description}</div>
+        <div style="font-size: 0.75rem; color: var(--ui-muted);">Official · ${fountain.source || "City of Melbourne"}</div>
+      </div>
+    `);
+    cityFountainsLayer.addLayer(marker);
+  });
+}
+
 function renderStreetNotes() {
   if (!streetNotesLayer) return;
   streetNotesLayer.clearLayers();
@@ -2505,6 +2586,8 @@ function addNotesToggle() {
     div.innerHTML = `
       <span style="font-size: 0.75rem;">📝 Notes</span>
       <div class="notes-toggle-switch active" id="notes-toggle"></div>
+      <span style="font-size: 0.75rem; margin-left: 0.5rem;">💧 Fountains</span>
+      <div class="notes-toggle-switch active" id="fountains-toggle"></div>
     `;
     
     L.DomEvent.disableClickPropagation(div);
@@ -2514,6 +2597,15 @@ function addNotesToggle() {
       showStreetNotes = !showStreetNotes;
       toggleSwitch.classList.toggle("active", showStreetNotes);
       renderStreetNotes();
+      renderList();
+    });
+
+    const fountainsToggle = div.querySelector("#fountains-toggle");
+    fountainsToggle.addEventListener("click", () => {
+      showCityFountains = !showCityFountains;
+      fountainsToggle.classList.toggle("active", showCityFountains);
+      renderCityDrinkingFountains();
+      renderList();
     });
     
     return div;
