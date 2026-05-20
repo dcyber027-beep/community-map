@@ -2244,7 +2244,23 @@ function initMap() {
   }).addTo(map);
   mainMarkersLayer = L.layerGroup().addTo(map);
   adminHighlightsLayer = L.layerGroup().addTo(map);
-  cityFountainsLayer = L.layerGroup().addTo(map);
+  cityFountainsLayer = L.markerClusterGroup({
+    maxClusterRadius: 48,
+    disableClusteringAtZoom: 17,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    zoomToBoundsOnClick: true,
+    iconCreateFunction(cluster) {
+      const count = cluster.getChildCount();
+      const size = count < 10 ? 34 : count < 50 ? 40 : 46;
+      return L.divIcon({
+        html: `<span class="fountain-cluster-count">${count}</span>`,
+        className: "fountain-cluster-icon",
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+      });
+    },
+  }).addTo(map);
   streetNotesLayer = L.layerGroup().addTo(map);
   peerLayer = L.layerGroup().addTo(map);
   
@@ -2578,39 +2594,39 @@ function renderStreetNotes() {
 
 function addNotesToggle() {
   if (!map) return;
-  
+
   const toggle = L.control({ position: "bottomright" });
-  
-  toggle.onAdd = function() {
+
+  toggle.onAdd = function () {
     const div = L.DomUtil.create("div", "notes-toggle-container");
     div.innerHTML = `
-      <span style="font-size: 0.75rem;">📝 Notes</span>
-      <div class="notes-toggle-switch active" id="notes-toggle"></div>
-      <span style="font-size: 0.75rem; margin-left: 0.5rem;">💧 Fountains</span>
-      <div class="notes-toggle-switch active" id="fountains-toggle"></div>
+      <button type="button" class="map-layer-toggle active" id="notes-toggle" aria-pressed="true">Notes</button>
+      <button type="button" class="map-layer-toggle active" id="fountains-toggle" aria-pressed="true">Fountains</button>
     `;
-    
+
     L.DomEvent.disableClickPropagation(div);
-    
-    const toggleSwitch = div.querySelector("#notes-toggle");
-    toggleSwitch.addEventListener("click", () => {
+
+    const notesBtn = div.querySelector("#notes-toggle");
+    notesBtn.addEventListener("click", () => {
       showStreetNotes = !showStreetNotes;
-      toggleSwitch.classList.toggle("active", showStreetNotes);
+      notesBtn.classList.toggle("active", showStreetNotes);
+      notesBtn.setAttribute("aria-pressed", String(showStreetNotes));
       renderStreetNotes();
       renderList();
     });
 
-    const fountainsToggle = div.querySelector("#fountains-toggle");
-    fountainsToggle.addEventListener("click", () => {
+    const fountainsBtn = div.querySelector("#fountains-toggle");
+    fountainsBtn.addEventListener("click", () => {
       showCityFountains = !showCityFountains;
-      fountainsToggle.classList.toggle("active", showCityFountains);
+      fountainsBtn.classList.toggle("active", showCityFountains);
+      fountainsBtn.setAttribute("aria-pressed", String(showCityFountains));
       renderCityDrinkingFountains();
       renderList();
     });
-    
+
     return div;
   };
-  
+
   toggle.addTo(map);
 }
 
