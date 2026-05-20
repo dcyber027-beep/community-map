@@ -1173,12 +1173,14 @@ body {
   opacity: 0.55;
 }
 
-/* City POI clusters (fountains & toilets) */
-.city-poi-cluster-icon {
+/* Map marker clusters (incidents, notes, fountains, toilets) */
+.map-cluster-icon {
   background: transparent !important;
   border: none !important;
 }
 
+.incident-cluster-count,
+.note-cluster-count,
 .fountain-cluster-count,
 .toilet-cluster-count {
   display: flex;
@@ -1192,6 +1194,16 @@ body {
   font-weight: 700;
   line-height: 1;
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.28);
+}
+
+.incident-cluster-count {
+  background: #c62828;
+  border: 2px solid #ffcdd2;
+}
+
+.note-cluster-count {
+  background: #1e88e5;
+  border: 2px solid #e3f2fd;
 }
 
 .fountain-cluster-count {

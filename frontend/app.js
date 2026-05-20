@@ -68,8 +68,8 @@ let cityFountainsLayer = null;
 let cityPublicToilets = [];
 let cityToiletsLayer = null;
 let showStreetNotes = true; // Toggle for showing/hiding street notes
-let showCityFountains = true; // Toggle for official drinking fountain markers
-let showCityToilets = true;
+let showCityFountains = false; // Official drinking fountains (off by default)
+let showCityToilets = false;
 let streetNoteLocation = null; // Selected location for Street Note modal
 
 // Peer-location layer — emoji markers for other users and self
@@ -317,7 +317,7 @@ function filteredNotesForList() {
   });
 }
 
-function createCityPoiClusterGroup(countClass) {
+function createMarkerClusterGroup(countClass) {
   return L.markerClusterGroup({
     maxClusterRadius: 48,
     disableClusteringAtZoom: 17,
@@ -329,7 +329,7 @@ function createCityPoiClusterGroup(countClass) {
       const size = count < 10 ? 34 : count < 50 ? 40 : 46;
       return L.divIcon({
         html: `<span class="${countClass}">${count}</span>`,
-        className: "city-poi-cluster-icon",
+        className: "map-cluster-icon",
         iconSize: [size, size],
         iconAnchor: [size / 2, size / 2],
       });
@@ -2319,11 +2319,11 @@ function initMap() {
     subdomains: "abcd",
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
   }).addTo(map);
-  mainMarkersLayer = L.layerGroup().addTo(map);
+  mainMarkersLayer = createMarkerClusterGroup("incident-cluster-count").addTo(map);
   adminHighlightsLayer = L.layerGroup().addTo(map);
-  cityFountainsLayer = createCityPoiClusterGroup("fountain-cluster-count").addTo(map);
-  cityToiletsLayer = createCityPoiClusterGroup("toilet-cluster-count").addTo(map);
-  streetNotesLayer = L.layerGroup().addTo(map);
+  cityFountainsLayer = createMarkerClusterGroup("fountain-cluster-count").addTo(map);
+  cityToiletsLayer = createMarkerClusterGroup("toilet-cluster-count").addTo(map);
+  streetNotesLayer = createMarkerClusterGroup("note-cluster-count").addTo(map);
   peerLayer = L.layerGroup().addTo(map);
   
   // Add street highlights legend
@@ -2694,8 +2694,8 @@ function addNotesToggle() {
     const div = L.DomUtil.create("div", "notes-toggle-container");
     div.innerHTML = `
       <button type="button" class="map-layer-toggle active" id="notes-toggle" aria-pressed="true">Notes</button>
-      <button type="button" class="map-layer-toggle active" id="fountains-toggle" aria-pressed="true">Fountains</button>
-      <button type="button" class="map-layer-toggle active" id="toilets-toggle" aria-pressed="true">WC</button>
+      <button type="button" class="map-layer-toggle" id="fountains-toggle" aria-pressed="false">Fountains</button>
+      <button type="button" class="map-layer-toggle" id="toilets-toggle" aria-pressed="false">WC</button>
     `;
 
     L.DomEvent.disableClickPropagation(div);
