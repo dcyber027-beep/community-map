@@ -65,8 +65,11 @@ let streetNotes = []; // Store street notes
 let streetNotesLayer = null; // Layer for street note markers
 let cityDrinkingFountains = []; // City of Melbourne official fountain locations
 let cityFountainsLayer = null;
+let cityPublicToilets = [];
+let cityToiletsLayer = null;
 let showStreetNotes = true; // Toggle for showing/hiding street notes
 let showCityFountains = true; // Toggle for official drinking fountain markers
+let showCityToilets = true;
 let streetNoteLocation = null; // Selected location for Street Note modal
 
 // Peer-location layer — emoji markers for other users and self
@@ -314,6 +317,55 @@ function filteredNotesForList() {
   });
 }
 
+function createCityPoiClusterGroup(countClass) {
+  return L.markerClusterGroup({
+    maxClusterRadius: 48,
+    disableClusteringAtZoom: 17,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    zoomToBoundsOnClick: true,
+    iconCreateFunction(cluster) {
+      const count = cluster.getChildCount();
+      const size = count < 10 ? 34 : count < 50 ? 40 : 46;
+      return L.divIcon({
+        html: `<span class="${countClass}">${count}</span>`,
+        className: "city-poi-cluster-icon",
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+      });
+    },
+  });
+}
+
+function cityReferenceListTitle(note) {
+  if (!note.isCityReference) return "Street Note";
+  if (note.referenceType === "toilet") return "Public Toilet";
+  return "Drinking Fountain";
+}
+
+function formatToiletAmenities(toilet) {
+  const parts = [];
+  if (toilet.female) parts.push("Female");
+  if (toilet.male) parts.push("Male");
+  if (toilet.wheelchair) parts.push("Accessible");
+  if (toilet.babyChanging) parts.push("Baby change");
+  return parts.join(" · ");
+}
+
+function buildToiletPopupHtml(toilet) {
+  const amenities = formatToiletAmenities(toilet);
+  const amenitiesHtml = amenities
+    ? `<div style="font-size: 0.8rem; color: var(--ui-muted); margin-bottom: 0.5rem;">${amenities}</div>`
+    : "";
+  return `
+    <div style="max-width: 240px; padding: 0.25rem;">
+      <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${toilet.name}</div>
+      ${amenitiesHtml}
+      <div style="font-size: 0.75rem; color: var(--ui-muted);">Official · ${toilet.source || "City of Melbourne"}</div>
+    </div>
+  `;
+}
+
 function cityFountainToListItem(fountain) {
   return {
     id: fountain.id,
@@ -325,7 +377,25 @@ function cityFountainToListItem(fountain) {
     created_at: null,
     forever: true,
     isCityReference: true,
+    referenceType: "fountain",
     source: fountain.source || "City of Melbourne",
+  };
+}
+
+function cityToiletToListItem(toilet) {
+  const amenities = formatToiletAmenities(toilet);
+  return {
+    id: toilet.id,
+    emoji: toilet.emoji || "🚽",
+    text: toilet.name,
+    latitude: toilet.lat,
+    longitude: toilet.lng,
+    location_text: amenities,
+    created_at: null,
+    forever: true,
+    isCityReference: true,
+    referenceType: "toilet",
+    source: toilet.source || "City of Melbourne",
   };
 }
 
@@ -333,6 +403,12 @@ function filteredCityFountainsForList() {
   const { noteEmoji, urgencyMode } = getListFilterState();
   if (urgencyMode || noteEmoji !== "💧") return [];
   return cityDrinkingFountains.map(cityFountainToListItem);
+}
+
+function filteredCityToiletsForList() {
+  const { noteEmoji, urgencyMode } = getListFilterState();
+  if (urgencyMode || noteEmoji !== "🚽") return [];
+  return cityPublicToilets.map(cityToiletToListItem);
 }
 
 function renderList() {
@@ -344,6 +420,7 @@ function renderList() {
   const noteItems = [
     ...filteredNotesForList(),
     ...filteredCityFountainsForList(),
+    ...filteredCityToiletsForList(),
   ].sort((a, b) => {
     if (a.isCityReference && !b.isCityReference) return 1;
     if (!a.isCityReference && b.isCityReference) return -1;
@@ -484,7 +561,7 @@ function renderList() {
 
     const title = document.createElement("div");
     title.className = "incident-title";
-    title.textContent = note.isCityReference ? "Drinking Fountain" : "Street Note";
+    title.textContent = cityReferenceListTitle(note);
 
     const isForeverNote = note.forever || !note.expires_at;
     const metaLine = document.createElement("div");
@@ -2244,23 +2321,8 @@ function initMap() {
   }).addTo(map);
   mainMarkersLayer = L.layerGroup().addTo(map);
   adminHighlightsLayer = L.layerGroup().addTo(map);
-  cityFountainsLayer = L.markerClusterGroup({
-    maxClusterRadius: 48,
-    disableClusteringAtZoom: 17,
-    spiderfyOnMaxZoom: true,
-    showCoverageOnHover: false,
-    zoomToBoundsOnClick: true,
-    iconCreateFunction(cluster) {
-      const count = cluster.getChildCount();
-      const size = count < 10 ? 34 : count < 50 ? 40 : 46;
-      return L.divIcon({
-        html: `<span class="fountain-cluster-count">${count}</span>`,
-        className: "fountain-cluster-icon",
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
-      });
-    },
-  }).addTo(map);
+  cityFountainsLayer = createCityPoiClusterGroup("fountain-cluster-count").addTo(map);
+  cityToiletsLayer = createCityPoiClusterGroup("toilet-cluster-count").addTo(map);
   streetNotesLayer = L.layerGroup().addTo(map);
   peerLayer = L.layerGroup().addTo(map);
   
@@ -2276,9 +2338,10 @@ function initMap() {
   // Load and render admin street highlights
   fetchAdminStreetHighlights();
   
-  // Official City of Melbourne drinking fountains
+  // Official City of Melbourne drinking fountains & public toilets
   loadCityDrinkingFountains();
-  
+  loadCityPublicToilets();
+
   // Load and render street notes
   fetchStreetNotes();
 }
@@ -2528,6 +2591,36 @@ function renderCityDrinkingFountains() {
   });
 }
 
+async function loadCityPublicToilets() {
+  try {
+    const response = await fetch("/data/melbourne-public-toilets.json");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    cityPublicToilets = await response.json();
+    renderCityPublicToilets();
+    renderList();
+  } catch (error) {
+    console.error("Failed to load city public toilets:", error);
+  }
+}
+
+function renderCityPublicToilets() {
+  if (!cityToiletsLayer) return;
+  cityToiletsLayer.clearLayers();
+  if (!showCityToilets) return;
+
+  cityPublicToilets.forEach((toilet) => {
+    const icon = L.divIcon({
+      className: "city-toilet-pin",
+      html: `<div style="background:#f3e8ff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid #7c3aed;box-shadow:0 1px 4px rgba(0,0,0,0.25);font-size:14px;">🚽</div>`,
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
+    });
+    const marker = L.marker([toilet.lat, toilet.lng], { icon });
+    marker.bindPopup(buildToiletPopupHtml(toilet));
+    cityToiletsLayer.addLayer(marker);
+  });
+}
+
 function renderStreetNotes() {
   if (!streetNotesLayer) return;
   streetNotesLayer.clearLayers();
@@ -2602,6 +2695,7 @@ function addNotesToggle() {
     div.innerHTML = `
       <button type="button" class="map-layer-toggle active" id="notes-toggle" aria-pressed="true">Notes</button>
       <button type="button" class="map-layer-toggle active" id="fountains-toggle" aria-pressed="true">Fountains</button>
+      <button type="button" class="map-layer-toggle active" id="toilets-toggle" aria-pressed="true">WC</button>
     `;
 
     L.DomEvent.disableClickPropagation(div);
@@ -2621,6 +2715,15 @@ function addNotesToggle() {
       fountainsBtn.classList.toggle("active", showCityFountains);
       fountainsBtn.setAttribute("aria-pressed", String(showCityFountains));
       renderCityDrinkingFountains();
+      renderList();
+    });
+
+    const toiletsBtn = div.querySelector("#toilets-toggle");
+    toiletsBtn.addEventListener("click", () => {
+      showCityToilets = !showCityToilets;
+      toiletsBtn.classList.toggle("active", showCityToilets);
+      toiletsBtn.setAttribute("aria-pressed", String(showCityToilets));
+      renderCityPublicToilets();
       renderList();
     });
 

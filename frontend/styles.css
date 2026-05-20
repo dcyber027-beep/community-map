@@ -1173,26 +1173,35 @@ body {
   opacity: 0.55;
 }
 
-/* Drinking fountain clusters */
-.fountain-cluster-icon {
+/* City POI clusters (fountains & toilets) */
+.city-poi-cluster-icon {
   background: transparent !important;
   border: none !important;
 }
 
-.fountain-cluster-count {
+.fountain-cluster-count,
+.toilet-cluster-count {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  background: #1565c0;
   color: #fff;
   font-size: 0.8rem;
   font-weight: 700;
   line-height: 1;
-  border: 2px solid #e3f2fd;
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.28);
+}
+
+.fountain-cluster-count {
+  background: #1565c0;
+  border: 2px solid #e3f2fd;
+}
+
+.toilet-cluster-count {
+  background: #7c3aed;
+  border: 2px solid #f3e8ff;
 }
 
 .marker-cluster-small,
@@ -3682,7 +3691,7 @@ body:has(#view-map.view-container.active) .leaflet-bottom.leaflet-right {
 body:has(#view-map.view-container.active)
   .leaflet-bottom.leaflet-right
   .leaflet-control:has(.notes-toggle-container) {
-  margin-bottom: 0.35rem !important;
+  margin-bottom: 3.25rem !important;
 }
 
 .leaflet-bar {
