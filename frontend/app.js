@@ -2677,7 +2677,15 @@ function initFilters() {
 }
 
 // ── Layers bottom sheet ──────────────────────────────────────────────────────
+function syncLayersSheetSwitches() {
+  setSwitch("layer-reports", showIncidents);
+  setSwitch("layer-discoveries", showStreetNotes);
+  setSwitch("layer-highlights", showHighlights);
+  setSwitch("layer-facilities", showPublicFacilities);
+}
+
 function openLayersSheet() {
+  syncLayersSheetSwitches();
   const overlay = document.getElementById("layers-sheet-overlay");
   if (overlay) { overlay.classList.remove("hidden"); overlay.setAttribute("aria-hidden", "false"); }
 }
@@ -2723,7 +2731,7 @@ function initLayersSheet() {
         setSwitch("layer-facilities", showPublicFacilities);
         renderCityDrinkingFountains();
         renderCityPublicToilets();
-        renderStreetNotes(); // user-reported toilets/fountains follow this toggle too
+        renderStreetNotes();
       }
       renderList();
     });
@@ -2886,54 +2894,6 @@ function renderStreetNotes() {
 
     streetNotesLayer.addLayer(marker);
   });
-}
-
-function addNotesToggle() {
-  if (!map) return;
-
-  const toggle = L.control({ position: "bottomright" });
-
-  toggle.onAdd = function () {
-    const div = L.DomUtil.create("div", "notes-toggle-container");
-    div.innerHTML = `
-      <button type="button" class="map-layer-toggle active" id="notes-toggle" aria-pressed="true">Notes</button>
-      <button type="button" class="map-layer-toggle" id="fountains-toggle" aria-pressed="false">Fountains</button>
-      <button type="button" class="map-layer-toggle" id="toilets-toggle" aria-pressed="false">WC</button>
-    `;
-
-    L.DomEvent.disableClickPropagation(div);
-
-    const notesBtn = div.querySelector("#notes-toggle");
-    notesBtn.addEventListener("click", () => {
-      showStreetNotes = !showStreetNotes;
-      notesBtn.classList.toggle("active", showStreetNotes);
-      notesBtn.setAttribute("aria-pressed", String(showStreetNotes));
-      renderStreetNotes();
-      renderList();
-    });
-
-    const fountainsBtn = div.querySelector("#fountains-toggle");
-    fountainsBtn.addEventListener("click", () => {
-      showCityFountains = !showCityFountains;
-      fountainsBtn.classList.toggle("active", showCityFountains);
-      fountainsBtn.setAttribute("aria-pressed", String(showCityFountains));
-      renderCityDrinkingFountains();
-      renderList();
-    });
-
-    const toiletsBtn = div.querySelector("#toilets-toggle");
-    toiletsBtn.addEventListener("click", () => {
-      showCityToilets = !showCityToilets;
-      toiletsBtn.classList.toggle("active", showCityToilets);
-      toiletsBtn.setAttribute("aria-pressed", String(showCityToilets));
-      renderCityPublicToilets();
-      renderList();
-    });
-
-    return div;
-  };
-
-  toggle.addTo(map);
 }
 
 // Centre the map on the user's current location (used by the floating Locate button)

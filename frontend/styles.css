@@ -3237,12 +3237,20 @@ body:has(#view-map.view-container.active) > .top-banner .top-banner-content {
 body:has(.modal:not(.hidden)) > .top-banner,
 body:has(.modal-overlay:not(.hidden)) > .top-banner,
 body:has(.street-note-overlay:not(.hidden)) > .top-banner,
+body:has(.action-sheet-overlay:not(.hidden)) > .top-banner,
+body:has(.sheet-overlay:not(.hidden)) > .top-banner,
 body:has(.modal:not(.hidden)) .app-shell > #collapsible-header,
 body:has(.modal-overlay:not(.hidden)) .app-shell > #collapsible-header,
 body:has(.street-note-overlay:not(.hidden)) .app-shell > #collapsible-header,
+body:has(.action-sheet-overlay:not(.hidden)) .app-shell > #collapsible-header,
+body:has(.sheet-overlay:not(.hidden)) .app-shell > #collapsible-header,
 body:has(.modal:not(.hidden)) .app-shell > .legal-links,
 body:has(.modal-overlay:not(.hidden)) .app-shell > .legal-links,
-body:has(.street-note-overlay:not(.hidden)) .app-shell > .legal-links {
+body:has(.street-note-overlay:not(.hidden)) .app-shell > .legal-links,
+body:has(.action-sheet-overlay:not(.hidden)) .app-shell > .legal-links,
+body:has(.sheet-overlay:not(.hidden)) .app-shell > .legal-links,
+body:has(.action-sheet-overlay:not(.hidden)) .fab-button,
+body:has(.action-sheet-overlay:not(.hidden)) .locate-fab {
   display: none !important;
 }
 
@@ -5409,7 +5417,7 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
 .action-sheet-overlay {
   position: fixed;
   inset: 0;
-  z-index: 950;
+  z-index: 1250;
   display: flex;
   align-items: flex-end;
   justify-content: center;
