@@ -32,6 +32,7 @@ class IncidentCreate(BaseModel):
     description: Optional[str] = ""
     latitude: float
     longitude: float
+    image_url: Optional[str] = None
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
     is_verified: bool = False
@@ -45,6 +46,7 @@ class Incident(BaseModel):
     description: str
     latitude: float
     longitude: float
+    image_url: Optional[str] = None
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
     is_verified: bool = False
@@ -345,16 +347,22 @@ class ChatMessage(BaseModel):
     message: str
     author: str
     timestamp: datetime
+    pinned: bool = False
+
+class ChatPinRequest(BaseModel):
+    pinned: bool
 
 @api_router.get("/chat/messages")
 async def get_chat_messages():
     """
-    Get all chat messages (auto-cleanup messages older than 24 hours)
+    Get all chat messages (auto-cleanup messages older than 24 hours).
+    Pinned messages are kept indefinitely so admins can keep them visible.
     """
-    # Auto-cleanup: Remove messages older than 24 hours
+    # Auto-cleanup: Remove non-pinned messages older than 24 hours
     cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
     await db.chat_messages.delete_many({
-        "timestamp": {"$lt": cutoff_time.isoformat()}
+        "timestamp": {"$lt": cutoff_time.isoformat()},
+        "pinned": {"$ne": True}
     })
     
     # Get all messages
@@ -369,6 +377,8 @@ async def get_chat_messages():
             msg_dict['timestamp'] = msg_dict['timestamp'].isoformat()
         elif isinstance(msg_dict['timestamp'], str):
             msg_dict['timestamp'] = msg_dict['timestamp']
+        # Backward compatibility for messages stored before pinning existed
+        msg_dict.setdefault('pinned', False)
         result.append(msg_dict)
     
     return result
@@ -385,7 +395,8 @@ async def create_chat_message(message_data: ChatMessageCreate):
         "id": message_id,
         "message": message_data.message,
         "author": message_data.author or "Anonymous",
-        "timestamp": now.isoformat()
+        "timestamp": now.isoformat(),
+        "pinned": False
     }
     
     await db.chat_messages.insert_one(message_doc)
@@ -396,9 +407,24 @@ async def create_chat_message(message_data: ChatMessageCreate):
             "id": message_id,
             "message": message_data.message,
             "author": message_data.author or "Anonymous",
-            "timestamp": now.isoformat()
+            "timestamp": now.isoformat(),
+            "pinned": False
         }
     }
+
+@api_router.post("/admin/chat/messages/{message_id}/pin")
+async def pin_chat_message(message_id: str, req: ChatPinRequest):
+    """
+    Admin endpoint to pin or unpin a chat message. Pinned messages survive the
+    24-hour auto-cleanup and are surfaced at the top of the chat for everyone.
+    """
+    result = await db.chat_messages.update_one(
+        {"id": message_id},
+        {"$set": {"pinned": bool(req.pinned)}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return {"success": True, "pinned": bool(req.pinned)}
 
 # Live Updates Content Management
 @api_router.get("/live-updates")

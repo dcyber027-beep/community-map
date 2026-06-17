@@ -51,7 +51,40 @@ function applyAvatarToUI() {
 // ─────────────────────────────────────────────────────────────────────────────
 let locationDescriptionCache = new Map(); // Cache for location descriptions
 let userReactions = new Map(); // Track user reactions per incident (loaded from localStorage)
-let mapFilterState = { hours: null, urgency: null }; // Track map filter state
+let mapFilterState = { hours: null, urgency: null }; // Track map filter state (legacy, derived from uiFilter)
+
+// ── Unified filter state (drives both map + list) ────────────────────────────
+// hours: number | null (null = All Time); category: incident category | null (all); urgency: 'high'|'medium'|'low' | null (all)
+let uiFilter = { hours: 6, category: null, urgency: null };
+
+// ── Layer visibility toggles ─────────────────────────────────────────────────
+let showIncidents = true;       // Reports layer
+let showHighlights = true;      // Admin street highlights layer
+let showPublicFacilities = false; // Fountains + toilets layer
+
+// Switch between map and list views (replaces old tab-based toggle)
+function activateView(view) {
+  const mapView = document.getElementById("view-map");
+  const listView = document.getElementById("view-list");
+  if (!mapView || !listView) return;
+  const segMap = document.getElementById("seg-map");
+  const segList = document.getElementById("seg-list");
+  mapView.classList.remove("slide-from-left", "slide-from-right");
+  listView.classList.remove("slide-from-left", "slide-from-right");
+  if (view === "list") {
+    listView.classList.add("active", "slide-from-right");
+    mapView.classList.remove("active");
+    if (segMap) segMap.classList.remove("active");
+    if (segList) segList.classList.add("active");
+    renderList();
+  } else {
+    mapView.classList.add("active", "slide-from-left");
+    listView.classList.remove("active");
+    if (segMap) segMap.classList.add("active");
+    if (segList) segList.classList.remove("active");
+    if (map) setTimeout(() => map.invalidateSize(), 80);
+  }
+}
 let liveUpdatesContent = ""; // Store live updates content
 let liveUpdatesScrollInterval = null; // Store scroll interval
 let adminStreetHighlights = []; // Store admin-created street highlights
@@ -83,6 +116,7 @@ const EMOJI_SHORTCUTS = [
   { emoji: "🚽", label: "Toilet", phrase: "There is a toilet here" },
   { emoji: "💧", label: "Drinking fountain", phrase: "Free drinking fountain here — stay hydrated!" },
   { emoji: "🧋", label: "Drink deal", phrase: "Milk tea deal here" },
+  { emoji: "🍩", label: "Dessert deal", phrase: "Sweet treat deal here" },
   { emoji: "☕", label: "Coffee", phrase: "Great coffee around here" },
   { emoji: "🍜", label: "Food", phrase: "Cheap eats nearby" },
   { emoji: "🅿️", label: "Parking", phrase: "Free parking spot here" },
@@ -97,10 +131,40 @@ const EMOJI_SHORTCUTS = [
 ];
 // Hidden in list "All" / "All Street Notes" until their category is selected
 const LIST_UTILITY_NOTE_EMOJIS = new Set(["💧", "🚽"]);
+// User-reported facilities (toilets/fountains) — governed by the Public
+// Facilities layer toggle alongside the preloaded City of Melbourne data.
+const FACILITY_NOTE_EMOJIS = new Set(["💧", "🚻", "🚽"]);
+function isFacilityNote(note) {
+  return !!note && FACILITY_NOTE_EMOJIS.has(note.emoji);
+}
 let selectedNoteEmoji = null;
 let lastAutofilledPhrase = null;
 let noteDurationHours = 12;
 let noteForever = false;
+
+// ── Wizard state — Report Incident ───────────────────────────────────────
+let reportWizardStep = 1;
+let reportWizardData = {
+  category: null,
+  urgency: 'medium',
+  description: '',
+  photoDataUrl: null,
+  identityMode: 'anonymous',
+  email: '',
+  phone: ''
+};
+
+// ── Wizard state — Community Discovery ───────────────────────────────────
+let discoveryWizardStep = 1;
+let discoveryWizardData = {
+  emoji: null,
+  label: '',
+  questionAnswer: null,
+  note: '',
+  photoDataUrl: null
+};
+let discoveryLocationMap = null;
+let discoveryLocationMarker = null;
 
 function formatDurationText(hours) {
   if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`;
@@ -158,6 +222,24 @@ const categoryMeta = {
   other: { emoji: "❓", label: "Other" },
 };
 
+// Category-tinted accent ring for street-note / discovery pins so each
+// category reads instantly instead of as a generic coloured circle.
+const streetNoteAccentMap = {
+  "💧": "#38bdf8", // fountain — water blue
+  "☕": "#b45309", // coffee — espresso brown
+  "🧋": "#c026d3", // bubble tea — berry pink
+  "🍩": "#ea580c", // dessert — warm donut orange
+  "🚻": "#22c55e", // toilet — facility green
+  "🚽": "#22c55e",
+  "🎵": "#a855f7", // busker / music — purple
+  "🔌": "#f59e0b", // charging — amber
+  "🚧": "#f97316", // construction — hazard orange
+  "📍": "#1E88E5", // other — brand blue
+};
+function streetNoteAccent(emoji) {
+  return streetNoteAccentMap[emoji] || "#1E88E5";
+}
+
 function urgencyColor(urgency) {
   switch (urgency) {
     case "high":
@@ -174,13 +256,19 @@ function urgencyColor(urgency) {
 function createEmojiMarker(lat, lng, category, urgency) {
   const meta = categoryMeta[category] || categoryMeta.other;
   const color = urgencyColor(urgency);
-  const html = `<div style="background:${color}"><span>${meta.emoji}</span></div>`;
+  // Teardrop glass pin — emoji communicates the category, the coloured ring
+  // and urgency dot signal severity (no flat generic coloured circle).
+  const html = `
+    <div class="map-pin map-pin-incident" style="--pin-accent:${color}">
+      <span class="map-pin-emoji">${meta.emoji}</span>
+    </div>`;
 
   const icon = L.divIcon({
-    className: "",
+    className: "map-pin-wrap",
     html,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
+    iconSize: [38, 46],
+    iconAnchor: [19, 44],
+    popupAnchor: [0, -40],
   });
 
   return L.marker([lat, lng], { icon });
@@ -231,22 +319,19 @@ async function fetchIncidents(hoursFilter) {
 }
 
 function getFilteredIncidentsForMap() {
-  // Filter incidents based on current map filter state
+  // Reports layer off → no incident markers
+  if (!showIncidents) return [];
   return incidents.filter((inc) => {
     const now = new Date();
     const ts = new Date(inc.timestamp);
-    
-    // Apply time filter
-    if (mapFilterState.hours != null) {
-      const cutoff = new Date(now.getTime() - mapFilterState.hours * 60 * 60 * 1000);
+
+    if (uiFilter.hours != null) {
+      const cutoff = new Date(now.getTime() - uiFilter.hours * 60 * 60 * 1000);
       if (ts < cutoff) return false;
     }
-    
-    // Apply urgency filter
-    if (mapFilterState.urgency === "high" && inc.urgency !== "high") {
-      return false;
-    }
-    
+    if (uiFilter.category && inc.category !== uiFilter.category) return false;
+    if (uiFilter.urgency && inc.urgency !== uiFilter.urgency) return false;
+
     return true;
   });
 }
@@ -271,48 +356,45 @@ function renderMapMarkers() {
 }
 
 function getListFilterState() {
-  const hours       = (() => { const v = document.getElementById("list-time-filter").value; return v ? parseInt(v, 10) : null; })();
-  const categoryRaw = document.getElementById("list-category-filter").value || "incidents";
-  const urgencyMode = document.getElementById("list-urgency-filter").value || "";
-
-  // Determine what the user wants to see
-  const showNotes    = categoryRaw === "all" || categoryRaw.startsWith("note:");
-  const showIncidents = categoryRaw !== "note:all" && !categoryRaw.startsWith("note:");
-  const isNoteFilter = categoryRaw.startsWith("note:");
-  const noteEmoji    = isNoteFilter && categoryRaw !== "note:all" ? categoryRaw.slice(5) : null;
-  // Specific incident category (not "all", "incidents", or note values)
-  const knownCategories = ["protest","theft","harassment","antisocial","other"];
-  const incidentCat = knownCategories.includes(categoryRaw) ? categoryRaw : null;
-
-  return { hours, categoryRaw, urgencyMode, showNotes, showIncidents, noteEmoji, incidentCat };
+  // Derived from the unified filter sheet + layer toggles
+  const hours = uiFilter.hours;            // number | null
+  const incidentCat = uiFilter.category;   // string | null
+  const urgencyMode = uiFilter.urgency || ""; // 'high'|'medium'|'low'|''
+  return {
+    hours,
+    urgencyMode,
+    incidentCat,
+    showIncidents,          // Reports layer
+    showNotes: showStreetNotes, // Discoveries layer
+    showFacilities: showPublicFacilities,
+    noteEmoji: null,
+  };
 }
 
 function filteredIncidentsForList() {
-  const { hours, showIncidents, incidentCat, urgencyMode } = getListFilterState();
+  const { hours, incidentCat, urgencyMode } = getListFilterState();
   if (!showIncidents) return [];
   return incidents.filter((inc) => {
     if (hours != null) {
       if (new Date(inc.timestamp) < new Date(Date.now() - hours * 3600000)) return false;
     }
     if (incidentCat && inc.category !== incidentCat) return false;
-    if (urgencyMode === "high" && inc.urgency !== "high") return false;
-    if (urgencyMode === "medium-high" && !(inc.urgency === "high" || inc.urgency === "medium")) return false;
+    if (urgencyMode && inc.urgency !== urgencyMode) return false;
     return true;
   });
 }
 
 function filteredNotesForList() {
-  const { hours, showNotes, noteEmoji, urgencyMode, categoryRaw } = getListFilterState();
-  // Notes are never shown when urgency filter is active (notes have no urgency)
-  if (!showNotes || urgencyMode) return [];
-  const hideUtilityNotes =
-    !noteEmoji && (categoryRaw === "all" || categoryRaw === "note:all");
+  const { hours, showNotes, showFacilities, urgencyMode } = getListFilterState();
+  // Notes have no urgency — hide them when an urgency filter is active
+  if (urgencyMode) return [];
   return streetNotes.filter((note) => {
+    // Facility notes follow the Public Facilities toggle; others the Discoveries toggle
+    const visible = isFacilityNote(note) ? showFacilities : showNotes;
+    if (!visible) return false;
     if (hours != null) {
       if (new Date(note.created_at) < new Date(Date.now() - hours * 3600000)) return false;
     }
-    if (hideUtilityNotes && LIST_UTILITY_NOTE_EMOJIS.has(note.emoji)) return false;
-    if (noteEmoji && note.emoji !== noteEmoji) return false;
     return true;
   });
 }
@@ -338,7 +420,7 @@ function createMarkerClusterGroup(countClass) {
 }
 
 function cityReferenceListTitle(note) {
-  if (!note.isCityReference) return "Street Note";
+  if (!note.isCityReference) return "Discovery";
   if (note.referenceType === "toilet") return "Public Toilet";
   return "Drinking Fountain";
 }
@@ -400,14 +482,14 @@ function cityToiletToListItem(toilet) {
 }
 
 function filteredCityFountainsForList() {
-  const { noteEmoji, urgencyMode } = getListFilterState();
-  if (urgencyMode || noteEmoji !== "💧") return [];
+  const { urgencyMode, showFacilities } = getListFilterState();
+  if (urgencyMode || !showFacilities || !showCityFountains) return [];
   return cityDrinkingFountains.map(cityFountainToListItem);
 }
 
 function filteredCityToiletsForList() {
-  const { noteEmoji, urgencyMode } = getListFilterState();
-  if (urgencyMode || noteEmoji !== "🚽") return [];
+  const { urgencyMode, showFacilities } = getListFilterState();
+  if (urgencyMode || !showFacilities || !showCityToilets) return [];
   return cityPublicToilets.map(cityToiletToListItem);
 }
 
@@ -432,244 +514,122 @@ function renderList() {
 
   if (!items.length && !noteItems.length) {
     const empty = document.createElement("div");
+    empty.className = "list-empty";
     empty.textContent = "No results match the selected filters.";
-    empty.style.fontSize = "0.85rem";
-    empty.style.color = "var(--ui-muted)";
     container.appendChild(empty);
     return;
   }
 
+  // Single frosted "results sheet" — every report is a row with a divider.
+  const sheet = document.createElement("div");
+  sheet.className = "list-sheet";
+  const cap = (s) => (s || "").charAt(0).toUpperCase() + (s || "").slice(1);
+
   items.forEach((inc) => {
     const meta = categoryMeta[inc.category] || categoryMeta.other;
-    const card = document.createElement("article");
-    card.className = "incident-card";
+    const chipClass = { high: "chip-high", medium: "chip-medium", low: "chip-low" }[inc.urgency] || "chip-low";
 
-    const left = document.createElement("div");
-    left.className = "incident-card-left";
-    left.textContent = meta.emoji;
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "list-row";
+    row.innerHTML = `
+      <span class="list-row-icon">${meta.emoji}</span>
+      <span class="list-row-main">
+        <span class="list-row-title">${meta.label}</span>
+        <span class="list-row-sub"><span data-incident-id="${inc.id}">Loading…</span></span>
+        <span class="list-row-meta">${humanTimeAgo(inc.timestamp)}${inc.is_verified ? " · ✓ Verified" : ""}${inc.cluster_count && inc.cluster_count > 1 ? ` · 👥 ${inc.cluster_count}` : ""}</span>
+      </span>
+      <span class="list-row-end">
+        <span class="list-chip ${chipClass}">${cap(inc.urgency)}</span>
+        <span class="list-row-chevron" aria-hidden="true">›</span>
+      </span>
+    `;
 
-    const main = document.createElement("div");
-    main.className = "incident-card-main";
-
-    const title = document.createElement("div");
-    title.className = "incident-title";
-    const label = meta.label;
-    title.textContent = `${label}`;
-
-    const metaLine = document.createElement("div");
-    metaLine.className = "incident-meta";
-    const credibility = inc.is_verified ? "Verified" : "Unverified";
-    metaLine.textContent = `${humanTimeAgo(inc.timestamp)} • ${credibility}`;
-
-    const desc = document.createElement("div");
-    desc.className = "incident-description";
-    // Auto-generate location description based on coordinates
-    desc.setAttribute("data-lat", inc.latitude);
-    desc.setAttribute("data-lng", inc.longitude);
-    desc.setAttribute("data-incident-id", inc.id);
-    desc.textContent = "Loading location...";
-    
-    // Load location description asynchronously
     reverseGeocode(inc.latitude, inc.longitude).then(locationDesc => {
-      // Update this specific description element
-      const descEl = document.querySelector(`[data-incident-id="${inc.id}"]`);
-      if (descEl) {
-        descEl.textContent = locationDesc;
-      }
+      const locEl = row.querySelector(`[data-incident-id="${inc.id}"]`);
+      if (locEl) locEl.textContent = locationDesc || `${inc.latitude.toFixed(4)}, ${inc.longitude.toFixed(4)}`;
     });
 
-    const tags = document.createElement("div");
-    tags.className = "incident-tags";
-
-    const urgencyTag = document.createElement("span");
-    urgencyTag.className = "tag";
-    if (inc.urgency === "high") urgencyTag.classList.add("tag-urgency-high");
-    if (inc.urgency === "medium") urgencyTag.classList.add("tag-urgency-medium");
-    if (inc.urgency === "low") urgencyTag.classList.add("tag-urgency-low");
-    urgencyTag.textContent = `Urgency: ${inc.urgency}`;
-    tags.appendChild(urgencyTag);
-
-    const credTag = document.createElement("span");
-    credTag.className = "tag";
-    credTag.classList.add(inc.is_verified ? "tag-verified" : "tag-unverified");
-    credTag.textContent = inc.is_verified ? "Verified report" : "Unverified";
-    tags.appendChild(credTag);
-
-    if (inc.cluster_count && inc.cluster_count > 1) {
-      const cl = document.createElement("span");
-      cl.className = "tag tag-cluster";
-      cl.textContent = `${inc.cluster_count} similar reports nearby`;
-      tags.appendChild(cl);
-    }
-
-    main.appendChild(title);
-    main.appendChild(metaLine);
-    main.appendChild(desc);
-    main.appendChild(tags);
-
-    const actions = document.createElement("div");
-    actions.className = "incident-card-actions";
-    const detailsBtn = document.createElement("button");
-    detailsBtn.className = "secondary-button";
-    detailsBtn.type = "button";
-    detailsBtn.textContent = "View details";
-    detailsBtn.addEventListener("click", () => {
-      // Switch to map view
-      const mapTab = document.getElementById("tab-map");
-      const listTab = document.getElementById("tab-list");
-      const mapView = document.getElementById("view-map");
-      const listView = document.getElementById("view-list");
-      
-      // Activate map view
-      mapTab.classList.add("active");
-      listTab.classList.remove("active");
-      mapView.classList.add("active");
-      listView.classList.remove("active");
-      
-      // Center map on incident location and zoom in
+    row.addEventListener("click", () => {
+      activateView("map");
       if (map) {
         map.setView([inc.latitude, inc.longitude], 17);
-        // Give map a moment to render, then open detail modal
-        setTimeout(() => {
-          map.invalidateSize();
-          openDetailModal(inc);
-        }, 300);
+        setTimeout(() => { map.invalidateSize(); openDetailModal(inc); }, 300);
       } else {
         openDetailModal(inc);
       }
     });
-    actions.appendChild(detailsBtn);
 
-    card.appendChild(left);
-    card.appendChild(main);
-    card.appendChild(actions);
-    container.appendChild(card);
+    sheet.appendChild(row);
   });
 
-  // Add Street Notes into list view (ambient layer)
+  // ── Discovery / Street Note rows ───────────────────────────────────────
   noteItems.forEach((note) => {
-    const card = document.createElement("article");
-    card.className = "incident-card";
-    card.style.borderLeft = "3px solid #1E88E5";
-
-    const left = document.createElement("div");
-    left.className = "incident-card-left";
-    left.textContent = note.emoji || "📝";
-
-    const main = document.createElement("div");
-    main.className = "incident-card-main";
-
-    const title = document.createElement("div");
-    title.className = "incident-title";
-    title.textContent = cityReferenceListTitle(note);
-
     const isForeverNote = note.forever || !note.expires_at;
-    const metaLine = document.createElement("div");
-    metaLine.className = "incident-meta";
-    metaLine.textContent = note.isCityReference
+    const timeText = note.isCityReference
       ? `Official · ${note.source || "City of Melbourne"}`
-      : `${humanTimeAgo(note.created_at)} • ${isForeverNote ? "Permanent" : formatRemainingTime(note.expires_at)}`;
+      : humanTimeAgo(note.created_at);
+    const locText = note.location_text || `${Number(note.latitude).toFixed(4)}, ${Number(note.longitude).toFixed(4)}`;
+    const chip = note.isCityReference
+      ? `<span class="list-chip chip-official">Official</span>`
+      : `<span class="list-chip chip-note">Discovery</span>`;
 
-    const location = document.createElement("div");
-    location.className = "incident-location";
-    location.innerHTML = `<strong>Location:</strong> ${note.location_text || `${Number(note.latitude).toFixed(4)}, ${Number(note.longitude).toFixed(4)}`}`;
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "list-row";
+    row.innerHTML = `
+      <span class="list-row-icon">${note.emoji || '📝'}</span>
+      <span class="list-row-main">
+        <span class="list-row-title">${cityReferenceListTitle(note)}</span>
+        <span class="list-row-sub">${note.text || locText}</span>
+        <span class="list-row-meta">${timeText}</span>
+      </span>
+      <span class="list-row-end">
+        ${chip}
+        <span class="list-row-chevron" aria-hidden="true">›</span>
+      </span>
+    `;
 
-    const desc = document.createElement("div");
-    desc.className = "incident-description";
-    desc.textContent = note.text;
-
-    main.appendChild(title);
-    main.appendChild(metaLine);
-    main.appendChild(location);
-    main.appendChild(desc);
-
-    if (note.image_url) {
-      const imgWrap = document.createElement("div");
-      imgWrap.style.marginTop = "0.5rem";
-      const img = document.createElement("img");
-      img.src = note.image_url;
-      img.alt = "Street note image";
-      img.style.width = "100%";
-      img.style.maxWidth = "220px";
-      img.style.maxHeight = "150px";
-      img.style.objectFit = "cover";
-      img.style.borderRadius = "8px";
-      img.style.border = "1px solid var(--ui-border)";
-      imgWrap.appendChild(img);
-      main.appendChild(imgWrap);
-    }
-
-    card.appendChild(left);
-    card.appendChild(main);
-    
-    const actions = document.createElement("div");
-    actions.className = "incident-card-actions";
-    const viewBtn = document.createElement("button");
-    viewBtn.className = "secondary-button";
-    viewBtn.type = "button";
-    viewBtn.textContent = "View on map";
-    viewBtn.addEventListener("click", () => {
-      const mapTab = document.getElementById("tab-map");
-      const listTab = document.getElementById("tab-list");
-      const mapView = document.getElementById("view-map");
-      const listView = document.getElementById("view-list");
-
-      mapTab.classList.add("active");
-      listTab.classList.remove("active");
-      mapView.classList.add("active");
-      listView.classList.remove("active");
-
+    row.addEventListener("click", () => {
+      activateView("map");
       if (map) {
         map.setView([note.latitude, note.longitude], 17);
         setTimeout(() => {
           map.invalidateSize();
           const imageHtml = note.image_url
-            ? `<div style="margin-bottom: 0.5rem;"><img src="${note.image_url}" alt="Street note image" style="display:block; width:100%; max-width:220px; max-height:150px; object-fit:cover; border-radius:6px; border:1px solid var(--ui-border);" /></div>`
-            : "";
-          const locationHtml = note.location_text
-            ? `<div style="font-size: 0.75rem; color: var(--ui-muted); margin-bottom: 0.5rem;">📍 ${note.location_text}</div>`
-            : "";
+            ? `<div style="margin-bottom:0.5rem"><img src="${note.image_url}" alt="Discovery photo" style="display:block;width:100%;max-width:220px;max-height:150px;object-fit:cover;border-radius:6px" /></div>` : "";
           const expText = isForeverNote ? "Permanent" : formatRemainingTime(note.expires_at);
-          const pBadge = isForeverNote && !note.isCityReference ? '<span class="note-permanent-badge">PERMANENT</span>' : '';
           const metaHtml = note.isCityReference
-            ? `<div style="font-size: 0.75rem; color: var(--ui-muted);">Official · ${note.source || "City of Melbourne"}</div>`
-            : `<div style="font-size: 0.75rem; color: var(--ui-muted);">${humanTimeAgo(note.created_at)} &middot; ${expText}</div>`;
+            ? `<div style="font-size:0.75rem;color:var(--ui-muted)">Official · ${note.source || "City of Melbourne"}</div>`
+            : `<div style="font-size:0.75rem;color:var(--ui-muted)">${humanTimeAgo(note.created_at)} · ${expText}</div>`;
           L.popup()
             .setLatLng([note.latitude, note.longitude])
-            .setContent(`
-              <div style="max-width: 240px; padding: 0.25rem;">
-                ${imageHtml}
-                ${locationHtml}
-                <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${note.text}${pBadge}</div>
-                ${metaHtml}
-              </div>
-            `)
+            .setContent(`<div style="max-width:240px;padding:0.25rem">${imageHtml}<div style="font-size:0.9375rem;line-height:1.5;margin-bottom:0.5rem">${note.text}</div>${metaHtml}</div>`)
             .openOn(map);
         }, 300);
       }
     });
-    actions.appendChild(viewBtn);
 
-    if (isAdminLoggedIn) {
+    // Admin delete (inline, doesn't trigger row navigation)
+    if (isAdminLoggedIn && !note.isCityReference) {
       const delBtn = document.createElement("button");
-      delBtn.className = "note-admin-delete";
+      delBtn.className = "list-row-delete";
       delBtn.type = "button";
-      delBtn.textContent = "🗑️ Delete";
-      delBtn.addEventListener("click", async () => {
-        if (!confirm("Delete this street note?")) return;
-        try {
-          await deleteStreetNoteById(note.id);
-          await fetchStreetNotes();
-        } catch (err) {
-          alert("Failed to delete note.");
-        }
+      delBtn.textContent = "🗑️";
+      delBtn.title = "Delete discovery";
+      delBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!confirm("Delete this discovery?")) return;
+        try { await deleteStreetNoteById(note.id); await fetchStreetNotes(); }
+        catch (err) { alert("Failed to delete."); }
       });
-      actions.appendChild(delBtn);
+      row.querySelector(".list-row-end").prepend(delBtn);
     }
 
-    card.appendChild(actions);
-    container.appendChild(card);
+    sheet.appendChild(row);
   });
+
+  container.appendChild(sheet);
 }
 
 async function reactToIncident(incidentId, reaction) {
@@ -740,85 +700,99 @@ function updateReactionButtons(incidentId, likeCount, dislikeCount) {
 
 async function openDetailModal(incident) {
   const meta = categoryMeta[incident.category] || categoryMeta.other;
-  const detailTitle = document.getElementById("detail-title");
   const detailBody = document.getElementById("detail-body");
-  detailTitle.textContent = `${meta.emoji} ${meta.label}`;
 
-  const credibility = incident.is_verified ? "Verified" : "Unverified";
   const tsText = humanTimeAgo(incident.timestamp);
-  
-  // Get location description
-  const locationDesc = await reverseGeocode(incident.latitude, incident.longitude);
-  const userDesc = incident.description || "";
-  
-  // Show location description and user description if different
-  let descriptionHTML = `<div class="incident-location"><strong>📍 Location:</strong> ${locationDesc}</div>`;
-  if (userDesc && userDesc.toLowerCase() !== locationDesc.toLowerCase()) {
-    descriptionHTML += `<div class="incident-description" style="margin-top:0.75rem"><strong>📝 Description:</strong> ${userDesc}</div>`;
-  }
-
+  const credibility = incident.is_verified ? "Verified" : "Unverified";
   const likeCount = incident.like_count || 0;
-  const dislikeCount = incident.dislike_count || 0;
   const userReaction = userReactions.get(incident.id);
-  const likeActive = userReaction === "like" ? "active" : "";
-  const dislikeActive = userReaction === "dislike" ? "active" : "";
-  const likeDisabled = userReaction === "like" ? "disabled" : "";
-  const dislikeDisabled = userReaction === "dislike" ? "disabled" : "";
+  const sawItActive = userReaction === "like" ? "active-reaction" : "";
+
+  const urgencyStatusClass = {
+    high: 'detail-status-high', medium: 'detail-status-medium', low: 'detail-status-low'
+  }[incident.urgency] || 'detail-status-low';
+  const urgencyDot = { high: '🔴', medium: '🟡', low: '🟢' }[incident.urgency] || '⚪';
+  const urgencyLabel = incident.urgency.charAt(0).toUpperCase() + incident.urgency.slice(1);
+
+  const clusterHtml = (incident.cluster_count && incident.cluster_count > 1)
+    ? `<div class="detail-card-confirmed"><span>👥</span> Confirmed by ${incident.cluster_count} similar reports nearby</div>` : '';
+
+  const descHtml = incident.description
+    ? `<div class="detail-card-description">${incident.description}</div>` : '';
+
+  const photoHtml = incident.image_url
+    ? `<img class="detail-card-photo" src="${incident.image_url}" alt="Reported photo" />` : '';
+
+  const credHtml = `<div class="detail-card-confidence"><span>⚠️</span> ${urgencyLabel} Urgency · ${credibility} report</div>`;
 
   detailBody.innerHTML = `
-    <div class="incident-meta">${tsText} • ${credibility}</div>
-    ${descriptionHTML}
-    <div class="incident-tags" style="margin-top:0.75rem">
-      <span class="tag ${
-        incident.urgency === "high"
-          ? "tag-urgency-high"
-          : incident.urgency === "medium"
-          ? "tag-urgency-medium"
-          : "tag-urgency-low"
-      }">Urgency: ${incident.urgency}</span>
-      <span class="tag ${
-        incident.is_verified ? "tag-verified" : "tag-unverified"
-      }">${credibility} report</span>
-      ${
-        incident.cluster_count && incident.cluster_count > 1
-          ? `<span class="tag tag-cluster">${incident.cluster_count} similar reports nearby</span>`
-          : ""
-      }
-    </div>
-    <div class="reaction-section" style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--ui-border);">
-      <div class="reaction-section-label">Did you see this too?</div>
-      <div class="reaction-buttons">
-        <button id="detail-like-btn" class="reaction-btn reaction-like ${likeActive}" ${likeDisabled} type="button">
-          <span class="reaction-icon">👍</span>
-          <span class="reaction-text">I saw that too</span>
-          <span id="detail-like-count" class="reaction-count">${likeCount}</span>
+    <div class="detail-card-body">
+      <div class="detail-card-category">
+        <span class="detail-card-emoji">${meta.emoji}</span>
+        <div>
+          <h3 class="detail-card-title">${meta.label}</h3>
+        </div>
+      </div>
+      ${photoHtml}
+      <span class="detail-card-status ${urgencyStatusClass}">${urgencyDot} ${urgencyLabel} Urgency</span>
+      <div class="detail-card-meta">
+        <div class="detail-meta-row">
+          <span class="detail-meta-icon">🕐</span>
+          <span>Reported ${tsText}</span>
+        </div>
+        <div class="detail-meta-row" id="detail-location-row">
+          <span class="detail-meta-icon">📍</span>
+          <span id="detail-location-text">Loading location…</span>
+        </div>
+      </div>
+      ${descHtml}
+      ${credHtml}
+      ${clusterHtml}
+      <div class="detail-card-actions">
+        <button id="detail-like-btn" class="detail-action-btn primary ${sawItActive}" type="button">
+          👥 I Saw This Too <span id="detail-like-count">${likeCount > 0 ? `(${likeCount})` : ''}</span>
         </button>
-        <button id="detail-dislike-btn" class="reaction-btn reaction-dislike ${dislikeActive}" ${dislikeDisabled} type="button">
-          <span class="reaction-icon">👎</span>
-          <span class="reaction-text">Dislike</span>
-          <span id="detail-dislike-count" class="reaction-count">${dislikeCount}</span>
+        <button id="detail-dislike-btn" class="detail-action-btn" type="button">
+          👎 Dislike
         </button>
       </div>
     </div>
   `;
 
-  // Set up event listeners for reaction buttons
+  // Async: load location text
+  reverseGeocode(incident.latitude, incident.longitude).then(desc => {
+    const locEl = document.getElementById("detail-location-text");
+    if (locEl && desc) locEl.textContent = desc;
+  });
+
+  // Reaction buttons
   const likeBtn = document.getElementById("detail-like-btn");
   const dislikeBtn = document.getElementById("detail-dislike-btn");
-  
+
+  if (userReaction) {
+    if (likeBtn) likeBtn.disabled = true;
+    if (dislikeBtn) dislikeBtn.disabled = true;
+  }
+
   if (likeBtn) {
     likeBtn.addEventListener("click", async () => {
-      if (!likeBtn.disabled) {
-        await reactToIncident(incident.id, "like");
-      }
+      if (likeBtn.disabled) return;
+      likeBtn.disabled = true;
+      if (dislikeBtn) dislikeBtn.disabled = true;
+      await reactToIncident(incident.id, "like");
+      likeBtn.classList.add("active-reaction");
+      const countEl = document.getElementById("detail-like-count");
+      if (countEl) countEl.textContent = `(${(incident.like_count || 0) + 1})`;
     });
   }
-  
+
   if (dislikeBtn) {
     dislikeBtn.addEventListener("click", async () => {
-      if (!dislikeBtn.disabled) {
-        await reactToIncident(incident.id, "dislike");
-      }
+      if (dislikeBtn.disabled) return;
+      dislikeBtn.disabled = true;
+      if (likeBtn) likeBtn.disabled = true;
+      await reactToIncident(incident.id, "dislike");
+      dislikeBtn.classList.add("active-reaction");
     });
   }
 
@@ -834,51 +808,41 @@ function closeDetailModal() {
 }
 
 async function submitReport() {
-  const categoryValue = getActiveChipValue("category-chips");
-  const urgencyValue = getActiveChipValue("urgency-chips");
-  const description = document.getElementById("description-input").value.trim();
-  const identityMode = document.querySelector(
-    'input[name="identity-mode"]:checked'
-  ).value;
-  const email = document.getElementById("contact-email").value.trim();
-  const phone = document.getElementById("contact-phone").value.trim();
   const agreementChecked = document.getElementById("agreement-checkbox").checked;
-
-  if (!locationMarker) {
-    alert("Please choose a location by using GPS, searching, or moving the pin.");
-    return;
-  }
-  if (!categoryValue) {
-    alert("Please choose a category.");
-    return;
-  }
-  if (!urgencyValue) {
-    alert("Please choose an urgency level.");
-    return;
-  }
   if (!agreementChecked) {
-    alert("You must confirm the agreement before posting.");
+    alert("Please confirm the agreement before submitting.");
     return;
   }
-  if (identityMode === "verified" && !email && !phone) {
+  if (!locationMarker) {
+    alert("Please set a location in step 2.");
+    return;
+  }
+
+  const email = document.getElementById("contact-email") ? document.getElementById("contact-email").value.trim() : '';
+  const phone = document.getElementById("contact-phone") ? document.getElementById("contact-phone").value.trim() : '';
+
+  if (reportWizardData.identityMode === "verified" && !email && !phone) {
     alert("Please provide at least an email or phone number, or choose anonymous.");
     return;
   }
 
   const { lat, lng } = locationMarker.getLatLng();
-
   const payload = {
-    category: categoryValue,
-    urgency: urgencyValue,
-    description,
+    category: reportWizardData.category || 'other',
+    urgency: reportWizardData.urgency || 'medium',
+    description: reportWizardData.description || '',
+    image_url: reportWizardData.photoDataUrl || '',
     latitude: lat,
     longitude: lng,
   };
 
-  if (identityMode === "verified") {
+  if (reportWizardData.identityMode === "verified") {
     if (email) payload.contact_email = email;
     if (phone) payload.contact_phone = phone;
   }
+
+  const submitBtn = document.getElementById("submit-report");
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting…'; }
 
   try {
     const res = await fetch(`${API_BASE}/incidents`, {
@@ -886,20 +850,36 @@ async function submitReport() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) {
-      throw new Error("Failed to submit report");
-    }
+    if (!res.ok) throw new Error("Failed to submit report");
     await fetchIncidents();
-    alert("Thank you. Your incident has been recorded.");
     closeReportModal();
+    // Brief success toast
+    showToast('✅ Incident reported — thank you!');
   } catch (e) {
     console.error(e);
     alert("There was a problem submitting your report. Please try again.");
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit Report'; }
   }
+}
+
+// Simple toast notification
+function showToast(message, duration = 3000) {
+  let toast = document.getElementById('app-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'app-toast';
+    toast.style.cssText = 'position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 10rem);left:50%;transform:translateX(-50%);background:rgba(20,30,48,0.95);color:#fff;padding:0.625rem 1.25rem;border-radius:20px;font-size:0.875rem;font-weight:600;z-index:9999;backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.12);box-shadow:0 4px 20px rgba(0,0,0,0.4);pointer-events:none;transition:opacity 0.3s;white-space:nowrap;';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.style.opacity = '1';
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, duration);
 }
 
 function getActiveChipValue(containerId) {
   const container = document.getElementById(containerId);
+  if (!container) return null;
   const active = container.querySelector(".chip.active");
   return active ? active.dataset.value : null;
 }
@@ -917,20 +897,147 @@ function initChipSelection(containerId) {
 }
 
 function openReportModal() {
+  reportWizardStep = 1;
+  reportWizardData = { category: null, urgency: 'medium', description: '', photoDataUrl: null, identityMode: 'anonymous', email: '', phone: '' };
+
+  // Reset all step visibility
+  for (let i = 1; i <= 5; i++) {
+    const el = document.getElementById(`report-step-${i}`);
+    if (el) { el.style.display = i === 1 ? '' : 'none'; }
+  }
+
+  // Reset photo
+  const photoPreview = document.getElementById('report-photo-preview');
+  const photoPlaceholder = document.getElementById('report-photo-placeholder');
+  const photoRemove = document.getElementById('report-photo-remove');
+  const photoInput = document.getElementById('report-photo-input');
+  if (photoPreview) { photoPreview.style.display = 'none'; photoPreview.src = ''; }
+  if (photoPlaceholder) photoPlaceholder.style.display = '';
+  if (photoRemove) photoRemove.style.display = 'none';
+  if (photoInput) photoInput.value = '';
+
+  // Reset textarea
+  const descInput = document.getElementById('description-input');
+  if (descInput) descInput.value = '';
+  const descCount = document.getElementById('desc-char-count');
+  if (descCount) descCount.textContent = '0';
+
+  // Reset urgency
+  document.querySelectorAll('#urgency-selector .urg-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.value === 'medium');
+  });
+
+  // Reset verification
+  const anonBtn = document.getElementById('verify-anon-btn');
+  const verifiedBtn = document.getElementById('verify-verified-btn');
+  const anonCheck = document.getElementById('verify-anon-check');
+  const verifiedCheck = document.getElementById('verify-verified-check');
+  const contactFields = document.getElementById('contact-fields');
+  if (anonBtn) anonBtn.classList.add('active');
+  if (verifiedBtn) verifiedBtn.classList.remove('active');
+  if (anonCheck) anonCheck.classList.remove('verify-check-hidden');
+  if (verifiedCheck) verifiedCheck.classList.add('verify-check-hidden');
+  if (contactFields) contactFields.style.display = 'none';
+
+  // Reset agreement checkbox
+  const agreeCheck = document.getElementById('agreement-checkbox');
+  if (agreeCheck) agreeCheck.checked = false;
+
+  // Reset review card
+  const reviewCard = document.getElementById('report-review-card');
+  if (reviewCard) reviewCard.innerHTML = '';
+
+  // Update step dots and back button
+  updateReportStepDots();
+  updateReportBackBtn();
+
   const modal = document.getElementById("report-modal");
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
-  setTimeout(() => {
-    if (locationMap) {
-      locationMap.invalidateSize();
-    }
-  }, 150);
+  setTimeout(() => { if (locationMap) locationMap.invalidateSize(); }, 300);
 }
 
 function closeReportModal() {
   const modal = document.getElementById("report-modal");
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
+}
+
+function updateReportStepDots() {
+  const dotsEl = document.getElementById('report-step-dots');
+  if (!dotsEl) return;
+  const dots = dotsEl.querySelectorAll('.wdot');
+  dots.forEach((dot, i) => dot.classList.toggle('active', i === reportWizardStep - 1));
+}
+
+function updateReportBackBtn() {
+  const btn = document.getElementById('report-back-btn');
+  if (btn) btn.style.visibility = reportWizardStep > 1 ? 'visible' : 'hidden';
+}
+
+function goToReportStep(step) {
+  const current = document.getElementById(`report-step-${reportWizardStep}`);
+  if (current) current.style.display = 'none';
+  reportWizardStep = step;
+  const next = document.getElementById(`report-step-${reportWizardStep}`);
+  if (next) next.style.display = '';
+  updateReportStepDots();
+  updateReportBackBtn();
+  // Refresh location map when arriving at step 2
+  if (step === 2) { setTimeout(() => { if (locationMap) locationMap.invalidateSize(); }, 200); }
+  // Populate review card when arriving at step 5
+  if (step === 5) buildReportReviewCard();
+}
+
+function buildReportReviewCard() {
+  const reviewCard = document.getElementById('report-review-card');
+  if (!reviewCard) return;
+  const meta = categoryMeta[reportWizardData.category] || categoryMeta.other;
+  const urgencyLabel = reportWizardData.urgency.charAt(0).toUpperCase() + reportWizardData.urgency.slice(1);
+  const urgencyColors = { low: '#4ade80', medium: '#facc15', high: '#f97373' };
+  const uc = urgencyColors[reportWizardData.urgency] || '#e5e7eb';
+  const location = locationMarker ? (() => {
+    const ll = locationMarker.getLatLng();
+    return `${ll.lat.toFixed(4)}, ${ll.lng.toFixed(4)}`;
+  })() : 'Not set';
+
+  reviewCard.innerHTML = `
+    <div class="review-row">
+      <span class="review-row-icon">${meta.emoji}</span>
+      <span class="review-row-label">Category</span>
+      <span>${meta.label}</span>
+    </div>
+    <div class="review-row">
+      <span class="review-row-icon" style="color:${uc}">●</span>
+      <span class="review-row-label">Urgency</span>
+      <span>${urgencyLabel}</span>
+    </div>
+    <div class="review-row">
+      <span class="review-row-icon">📍</span>
+      <span class="review-row-label">Location</span>
+      <span style="font-size:0.8rem">${location}</span>
+    </div>
+    ${reportWizardData.description ? `
+    <div class="review-row">
+      <span class="review-row-icon">📝</span>
+      <span class="review-row-label">Description</span>
+      <span style="font-size:0.8rem">${reportWizardData.description.substring(0, 80)}${reportWizardData.description.length > 80 ? '…' : ''}</span>
+    </div>` : ''}
+    <div class="review-row">
+      <span class="review-row-icon">🔒</span>
+      <span class="review-row-label">Identity</span>
+      <span>${reportWizardData.identityMode === 'anonymous' ? 'Anonymous' : 'Verified'}</span>
+    </div>
+  `;
+
+  // If we have a real address, update asynchronously
+  if (locationMarker) {
+    const ll = locationMarker.getLatLng();
+    reverseGeocode(ll.lat, ll.lng).then(desc => {
+      const locRow = reviewCard.querySelector('.review-row:nth-child(3) span:last-child');
+      if (locRow) locRow.textContent = desc || location;
+    });
+  }
 }
 
 async function geocodeAddress() {
@@ -1227,77 +1334,69 @@ async function fetchLiveUpdates() {
 
 function displayLiveUpdates() {
   const updatesText = document.getElementById("updates-text");
-  if (!updatesText) return;
-  
-  updatesText.textContent = liveUpdatesContent;
-  
-  // Start scrolling animation if content is long enough
-  startLiveUpdatesScrolling();
+  if (updatesText) updatesText.textContent = liveUpdatesContent;
+
+  startTickerScrolling(".updates-scroll-container", "#updates-text");
+
+  const chatModal = document.getElementById("chat-modal");
+  if (chatModal && !chatModal.classList.contains("hidden")) {
+    renderChatMessages();
+  }
 }
 
-function startLiveUpdatesScrolling() {
-  // Clear existing interval
-  if (liveUpdatesScrollInterval) {
-    clearInterval(liveUpdatesScrollInterval);
-    liveUpdatesScrollInterval = null;
-  }
-  
-  const scrollContainer = document.querySelector(".updates-scroll-container");
-  const updatesText = document.getElementById("updates-text");
+function startTickerScrolling(containerSelector, textSelector) {
+  const scrollContainer = document.querySelector(containerSelector);
+  const updatesText = document.querySelector(textSelector);
   if (!scrollContainer || !updatesText) return;
-  
-  // Force reflow to get accurate measurements
+
   updatesText.style.display = "inline-block";
-  
-  // Wait a bit for layout to settle, then check if scrolling is needed
+
   setTimeout(() => {
     const containerWidth = scrollContainer.offsetWidth;
     const textWidth = updatesText.scrollWidth;
-    
+
     if (textWidth <= containerWidth) {
-      // Content fits, no need to scroll
       updatesText.style.animation = "none";
       updatesText.style.transform = "translateX(0)";
     } else {
-      // Content overflows, start scrolling
-      // Reset and start animation
-      updatesText.style.animation = "none";
-      void updatesText.offsetWidth; // Force reflow
       updatesText.style.animation = "scroll-text 30s linear infinite";
+      updatesText.style.transform = "";
     }
   }, 100);
 }
 
+function startLiveUpdatesScrolling() {
+  startTickerScrolling(".updates-scroll-container", "#updates-text");
+}
+
 async function updateActiveUsersCount() {
-  const activeUsersText = document.getElementById("active-users-text");
-  if (!activeUsersText) return;
+  const onlineText = document.getElementById("online-count-text");
+  const legacyText = document.getElementById("active-users-text");
+  const setText = (count) => {
+    const label = `${count} online`;
+    if (onlineText) onlineText.textContent = label;
+    if (legacyText) {
+      legacyText.textContent =
+        count === 1 ? "1 person active on the map, tap to chat"
+                    : `${count} people active on the map, tap to chat`;
+    }
+  };
 
   try {
-    // Send heartbeat to indicate this user is active
     const sessionId = getOrCreateSessionId();
     const response = await fetch(`${API_BASE}/users/heartbeat/${sessionId}`, {
       method: "POST"
     });
-    
+
     if (response.ok) {
       const data = await response.json();
-      const activeCount = data.active_count || 0;
-
-      // Update the text with new format
-      if (activeCount === 0) {
-        activeUsersText.textContent = "0 people active on the map, tap to chat";
-      } else if (activeCount === 1) {
-        activeUsersText.textContent = "1 person active on the map, tap to chat";
-      } else {
-        activeUsersText.textContent = `${activeCount} people active on the map, tap to chat`;
-      }
+      setText(data.active_count || 0);
     } else {
-      // Fallback if API fails
-      activeUsersText.textContent = "0 people active on the map, tap to chat";
+      setText(0);
     }
   } catch (error) {
     console.error("Failed to update active users count:", error);
-    activeUsersText.textContent = "0 people active on the map, tap to chat";
+    setText(0);
   }
 }
 
@@ -1867,12 +1966,12 @@ async function renderAdminStreetNotesSection(dashboard) {
     header.style.cssText = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;";
 
     const title = document.createElement("h2");
-    title.textContent = "Street Notes";
+    title.textContent = "Community Discoveries";
     title.style.cssText = "font-size: 1.25rem; font-weight: 600; color: var(--ui-text); margin: 0;";
 
     const foreverCount = notes.filter(n => n.forever || !n.expires_at).length;
     const count = document.createElement("div");
-    count.textContent = `${notes.length} note${notes.length !== 1 ? "s" : ""}${foreverCount ? ` (${foreverCount} permanent)` : ""}`;
+    count.textContent = `${notes.length} discover${notes.length !== 1 ? "ies" : "y"}${foreverCount ? ` (${foreverCount} permanent)` : ""}`;
     count.style.cssText = "font-size: 0.875rem; color: var(--ui-muted);";
 
     header.appendChild(title);
@@ -1881,7 +1980,7 @@ async function renderAdminStreetNotesSection(dashboard) {
 
     if (!notes.length) {
       const empty = document.createElement("div");
-      empty.textContent = "No street notes posted.";
+      empty.textContent = "No discoveries posted.";
       empty.style.cssText = "font-size: 0.875rem; color: var(--ui-muted); padding: 1rem; text-align: center; background: var(--ui-panel); border-radius: 8px;";
       section.appendChild(empty);
       dashboard.appendChild(section);
@@ -1911,7 +2010,7 @@ async function renderAdminStreetNotesSection(dashboard) {
           <div style="flex:1;min-width:0;">
             <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">
               <span style="font-size:1.25rem;">${emojiIcon}</span>
-              <strong style="font-size:0.9rem;color:var(--ui-text);">Street Note</strong>
+              <strong style="font-size:0.9rem;color:var(--ui-text);">Discovery</strong>
               ${badge}
             </div>
             <div style="font-size:0.875rem;color:var(--ui-soft);margin-bottom:0.25rem;">${note.text}</div>
@@ -1931,7 +2030,7 @@ async function renderAdminStreetNotesSection(dashboard) {
 
     list.querySelectorAll(".admin-delete-note-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        if (!confirm("Delete this street note?")) return;
+        if (!confirm("Delete this discovery?")) return;
         try {
           await deleteStreetNoteById(btn.dataset.noteId);
           await fetchStreetNotes();
@@ -2055,7 +2154,7 @@ function initAdminModal() {
   if (adminBody && !adminLoginTemplate) adminLoginTemplate = adminBody.innerHTML;
 
   // 10-tap Easter egg on the M logo box
-  const logoBox = document.querySelector(".app-logo-box");
+  const logoBox = document.querySelector(".mhc-logo");
   if (logoBox) {
     let tapCount = 0;
     let tapTimer = null;
@@ -2266,7 +2365,21 @@ function initAvatarPicker() {
   }
 }
 
-function initViewToggle() {
+function initViewControls() {
+  // Map → List entry (bottom-left "List" button)
+  const listToggleBtn = document.getElementById("list-toggle-btn");
+  if (listToggleBtn) listToggleBtn.addEventListener("click", () => activateView("list"));
+
+  // List view: back arrow + segmented Map/List toggle
+  const listBack = document.getElementById("list-back");
+  if (listBack) listBack.addEventListener("click", () => activateView("map"));
+  const segMap = document.getElementById("seg-map");
+  if (segMap) segMap.addEventListener("click", () => activateView("map"));
+  const segList = document.getElementById("seg-list");
+  if (segList) segList.addEventListener("click", () => activateView("list"));
+}
+
+function initViewToggle_LEGACY_UNUSED() {
   const mapTab  = document.getElementById("tab-map");
   const listTab = document.getElementById("tab-list");
   const mapView  = document.getElementById("view-map");
@@ -2326,14 +2439,8 @@ function initMap() {
   streetNotesLayer = createMarkerClusterGroup("note-cluster-count").addTo(map);
   peerLayer = L.layerGroup().addTo(map);
   
-  // Add street highlights legend
-  addStreetHighlightsLegend();
-  
-  // Add notes toggle control
-  addNotesToggle();
-
-  // Add locate-me button
-  addLocateControl();
+  // Layer toggles now live in the Layers bottom sheet (no map control)
+  // Locate button is a floating HTML control (see initLocateButton)
   
   // Load and render admin street highlights
   fetchAdminStreetHighlights();
@@ -2365,7 +2472,9 @@ function renderAdminStreetHighlights() {
   if (!adminHighlightsLayer) return;
   
   adminHighlightsLayer.clearLayers();
-  
+
+  if (!showHighlights) return;
+
   adminStreetHighlights.forEach((highlight) => {
     const color = getHighlightColorCode(highlight.color);
     const weight = highlight.color === "red" ? 10 : highlight.color === "yellow" ? 8 : 6;
@@ -2490,54 +2599,145 @@ function initLocationMap() {
   });
 }
 
+// ── Filter bottom sheet ──────────────────────────────────────────────────────
+function openFilterSheet() {
+  const overlay = document.getElementById("filter-sheet-overlay");
+  if (overlay) { overlay.classList.remove("hidden"); overlay.setAttribute("aria-hidden", "false"); }
+}
+function closeFilterSheet() {
+  const overlay = document.getElementById("filter-sheet-overlay");
+  if (overlay) { overlay.classList.add("hidden"); overlay.setAttribute("aria-hidden", "true"); }
+}
+
+function setActivePill(rowId, value) {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  row.querySelectorAll(".filter-pill").forEach((pill) => {
+    pill.classList.toggle("active", pill.dataset.value === value);
+  });
+}
+
+function applyUiFilter() {
+  renderMapMarkers();
+  renderList();
+}
+
 function initFilters() {
-  document
-    .getElementById("list-time-filter")
-    .addEventListener("change", () => renderList());
-  document
-    .getElementById("list-category-filter")
-    .addEventListener("change", () => renderList());
-  document
-    .getElementById("list-urgency-filter")
-    .addEventListener("change", () => renderList());
-  
-  // Quick filter in navigation bar - filters map directly
-  const quickFilter = document.getElementById("quick-filter");
-  if (quickFilter) {
-    quickFilter.addEventListener("change", (e) => {
-      const value = e.target.value;
-      
-      // Update map filter state
-      if (value === "high") {
-        mapFilterState.urgency = "high";
-        mapFilterState.hours = null;
-      } else if (value === "2" || value === "4") {
-        mapFilterState.hours = parseInt(value, 10);
-        mapFilterState.urgency = null;
-      } else {
-        // "All Reports" - clear filters
-        mapFilterState.hours = null;
-        mapFilterState.urgency = null;
+  // Single-select pill groups inside the filter sheet
+  const timeRow = document.getElementById("filter-time");
+  const catRow = document.getElementById("filter-category");
+  const urgRow = document.getElementById("filter-urgency");
+
+  if (timeRow) {
+    timeRow.querySelectorAll(".filter-pill").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        setActivePill("filter-time", pill.dataset.value);
+        uiFilter.hours = pill.dataset.value === "all" ? null : parseInt(pill.dataset.value, 10);
+      });
+    });
+  }
+  if (catRow) {
+    catRow.querySelectorAll(".filter-pill").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        setActivePill("filter-category", pill.dataset.value);
+        uiFilter.category = pill.dataset.value === "all" ? null : pill.dataset.value;
+      });
+    });
+  }
+  if (urgRow) {
+    urgRow.querySelectorAll(".filter-pill").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        setActivePill("filter-urgency", pill.dataset.value);
+        uiFilter.urgency = pill.dataset.value === "all" ? null : pill.dataset.value;
+      });
+    });
+  }
+
+  // Open / close
+  const filterBtn = document.getElementById("filter-btn");
+  if (filterBtn) filterBtn.addEventListener("click", openFilterSheet);
+  const listFiltersBtn = document.getElementById("list-filters-btn");
+  if (listFiltersBtn) listFiltersBtn.addEventListener("click", openFilterSheet);
+  const backdrop = document.getElementById("filter-sheet-backdrop");
+  if (backdrop) backdrop.addEventListener("click", closeFilterSheet);
+
+  // Apply
+  const applyBtn = document.getElementById("filter-apply");
+  if (applyBtn) applyBtn.addEventListener("click", () => { applyUiFilter(); closeFilterSheet(); });
+
+  // Reset
+  const resetBtn = document.getElementById("filter-reset");
+  if (resetBtn) resetBtn.addEventListener("click", () => {
+    uiFilter = { hours: 6, category: null, urgency: null };
+    setActivePill("filter-time", "6");
+    setActivePill("filter-category", "all");
+    setActivePill("filter-urgency", "all");
+    applyUiFilter();
+  });
+}
+
+// ── Layers bottom sheet ──────────────────────────────────────────────────────
+function openLayersSheet() {
+  const overlay = document.getElementById("layers-sheet-overlay");
+  if (overlay) { overlay.classList.remove("hidden"); overlay.setAttribute("aria-hidden", "false"); }
+}
+function closeLayersSheet() {
+  const overlay = document.getElementById("layers-sheet-overlay");
+  if (overlay) { overlay.classList.add("hidden"); overlay.setAttribute("aria-hidden", "true"); }
+}
+
+function setSwitch(id, on) {
+  const sw = document.getElementById(id);
+  if (!sw) return;
+  sw.classList.toggle("active", on);
+  sw.setAttribute("aria-checked", String(on));
+}
+
+function initLayersSheet() {
+  const layersBtn = document.getElementById("layers-btn");
+  if (layersBtn) layersBtn.addEventListener("click", openLayersSheet);
+  const backdrop = document.getElementById("layers-sheet-backdrop");
+  if (backdrop) backdrop.addEventListener("click", closeLayersSheet);
+  const doneBtn = document.getElementById("layers-done");
+  if (doneBtn) doneBtn.addEventListener("click", closeLayersSheet);
+
+  document.querySelectorAll(".layers-sheet .layer-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      const layer = row.dataset.layer;
+      if (layer === "reports") {
+        showIncidents = !showIncidents;
+        setSwitch("layer-reports", showIncidents);
+        renderMapMarkers();
+      } else if (layer === "discoveries") {
+        showStreetNotes = !showStreetNotes;
+        setSwitch("layer-discoveries", showStreetNotes);
+        renderStreetNotes();
+      } else if (layer === "highlights") {
+        showHighlights = !showHighlights;
+        setSwitch("layer-highlights", showHighlights);
+        renderAdminStreetHighlights();
+      } else if (layer === "facilities") {
+        showPublicFacilities = !showPublicFacilities;
+        showCityFountains = showPublicFacilities;
+        showCityToilets = showPublicFacilities;
+        setSwitch("layer-facilities", showPublicFacilities);
+        renderCityDrinkingFountains();
+        renderCityPublicToilets();
+        renderStreetNotes(); // user-reported toilets/fountains follow this toggle too
       }
-      
-      // Update map markers with filtered incidents
-      renderMapMarkers();
-      
-      // Also update list view filters if user is on list view (for consistency)
-      const listView = document.getElementById("view-list");
-      if (listView && listView.classList.contains("active")) {
-        if (value === "high") {
-          document.getElementById("list-urgency-filter").value = "high";
-        } else if (value === "2" || value === "4") {
-          document.getElementById("list-time-filter").value = value;
-        } else {
-          document.getElementById("list-time-filter").value = "";
-          document.getElementById("list-urgency-filter").value = "";
-        }
-        renderList();
-      }
-      
-      quickFilter.value = ""; // Reset dropdown
+      renderList();
+    });
+  });
+}
+
+// ── Map header (online pill → chat) ──────────────────────────────────────────
+function initMapHeader() {
+  const onlinePill = document.getElementById("online-pill");
+  if (onlinePill) {
+    onlinePill.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openChatModal();
     });
   }
 }
@@ -2624,20 +2824,23 @@ function renderCityPublicToilets() {
 function renderStreetNotes() {
   if (!streetNotesLayer) return;
   streetNotesLayer.clearLayers();
-  
-  if (!showStreetNotes) return;
-  
+
   streetNotes.forEach((note) => {
+    // Facility notes follow the Public Facilities toggle; everything else
+    // follows the Discoveries toggle.
+    if (isFacilityNote(note) ? !showPublicFacilities : !showStreetNotes) return;
     const pinEmoji = note.emoji || "📝";
-    const hasCustomEmoji = !!note.emoji;
-    const bg = hasCustomEmoji ? "#ffffff" : "#1E88E5";
-    const fontSize = hasCustomEmoji ? "15px" : "12px";
-    const borderColor = hasCustomEmoji ? "#1E88E5" : "white";
+    // Tint the pin ring per discovery category so notes read instantly.
+    const accent = streetNoteAccent(pinEmoji);
     const icon = L.divIcon({
-      className: "street-note-pin",
-      html: `<div style="background: ${bg}; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid ${borderColor}; box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-size: ${fontSize};">${pinEmoji}</div>`,
-      iconSize: [28, 28],
-      iconAnchor: [14, 14]
+      className: "map-pin-wrap",
+      html: `
+        <div class="map-pin map-pin-note" style="--pin-accent:${accent}">
+          <span class="map-pin-emoji">${pinEmoji}</span>
+        </div>`,
+      iconSize: [38, 46],
+      iconAnchor: [19, 44],
+      popupAnchor: [0, -40]
     });
     
     const marker = L.marker([note.latitude, note.longitude], { icon });
@@ -2733,78 +2936,44 @@ function addNotesToggle() {
   toggle.addTo(map);
 }
 
-function addLocateControl() {
+// Centre the map on the user's current location (used by the floating Locate button)
+function goToMyLocation(triggerEl) {
   if (!map) return;
+  if (userLocation) {
+    map.setView([userLocation.lat, userLocation.lng], 17);
+    updateUserMarkers();
+    return;
+  }
+  if (!navigator.geolocation) return;
+  if (triggerEl) triggerEl.classList.add('locating');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      map.setView([userLocation.lat, userLocation.lng], 17);
+      updateUserMarkers();
+      if (triggerEl) triggerEl.classList.remove('locating');
+    },
+    () => { if (triggerEl) triggerEl.classList.remove('locating'); },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
 
-  const locateCtrl = L.control({ position: 'topleft' });
-
-  locateCtrl.onAdd = function () {
-    const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control locate-me-btn');
-    container.innerHTML = `<a href="#" title="Go to my location" role="button" aria-label="Go to my location">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="4"/>
-        <line x1="12" y1="2" x2="12" y2="6"/>
-        <line x1="12" y1="18" x2="12" y2="22"/>
-        <line x1="2" y1="12" x2="6" y2="12"/>
-        <line x1="18" y1="12" x2="22" y2="12"/>
-      </svg>
-    </a>`;
-    L.DomEvent.disableClickPropagation(container);
-
-    container.querySelector('a').addEventListener('click', (e) => {
-      e.preventDefault();
-      if (userLocation) {
-        map.setView([userLocation.lat, userLocation.lng], 17);
-        updateUserMarkers();
-        return;
-      }
-      if (!navigator.geolocation) return;
-      const link = container.querySelector('a');
-      link.classList.add('locating');
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          map.setView([userLocation.lat, userLocation.lng], 17);
-          updateUserMarkers();
-          link.classList.remove('locating');
-        },
-        () => { link.classList.remove('locating'); },
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    });
-
-    return container;
-  };
-
-  locateCtrl.addTo(map);
+function initLocateButton() {
+  const btn = document.getElementById("locate-fab");
+  if (btn) btn.addEventListener("click", () => goToMyLocation(btn));
 }
 
 function openStreetNoteModal() {
   const modal = document.getElementById("street-note-modal");
   if (!modal) return;
-  
-  modal.classList.remove("hidden");
-  modal.setAttribute("aria-hidden", "false");
-  
-  // Reset form
-  const textarea = document.getElementById("street-note-text");
-  const countEl = document.getElementById("street-note-count");
-  const submitBtn = document.getElementById("street-note-submit");
-  const imageInput = document.getElementById("street-note-image");
-  const imageMeta = document.getElementById("street-note-image-meta");
-  const locationInput = document.getElementById("street-note-location");
-  if (textarea) textarea.value = "";
-  if (countEl) countEl.textContent = "0";
-  if (submitBtn) submitBtn.disabled = true;
-  if (submitBtn) submitBtn.textContent = "Post Note";
-  if (imageInput) imageInput.value = "";
-  if (imageMeta) imageMeta.textContent = "No image selected";
-  if (locationInput) locationInput.value = "";
 
+  // Reset wizard state
+  discoveryWizardStep = 1;
+  discoveryWizardData = { emoji: null, label: '', questionAnswer: null, note: '', photoDataUrl: null };
   selectedNoteEmoji = null;
-  lastAutofilledPhrase = null;
-  renderEmojiShortcutBar();
+  streetNoteLocation = null;
 
+  // Reset duration slider + forever toggle
   noteDurationHours = 12;
   noteForever = false;
   const durSlider = document.getElementById("street-note-duration");
@@ -2823,31 +2992,47 @@ function openStreetNoteModal() {
   }
   if (durPlayer) durPlayer.classList.remove("is-forever");
   if (foreverCb) foreverCb.checked = false;
-  
-  // Get user location for display
-  const locationDisplay = document.getElementById("street-note-location");
+
+  // Reset all step visibility
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById(`discovery-step-${i}`);
+    if (el) { el.style.display = i === 1 ? '' : 'none'; }
+  }
+
+  // Reset category grid selection
+  const catGrid = document.getElementById("discovery-category-grid");
+  if (catGrid) catGrid.querySelectorAll(".cat-card").forEach(c => c.classList.remove("selected"));
+
+  // Reset step 2 fields
+  const textarea = document.getElementById("street-note-text");
+  if (textarea) textarea.value = "";
+  const countEl = document.getElementById("street-note-count");
+  if (countEl) countEl.textContent = "0";
+  const imageInput = document.getElementById("street-note-image");
+  if (imageInput) imageInput.value = "";
+  const photoPreview = document.getElementById("discovery-photo-preview");
+  if (photoPreview) { photoPreview.style.display = 'none'; photoPreview.src = ''; }
+  const photoPlaceholder = document.getElementById("discovery-photo-placeholder");
+  if (photoPlaceholder) photoPlaceholder.style.display = '';
+  const photoRemove = document.getElementById("discovery-photo-remove");
+  if (photoRemove) photoRemove.style.display = 'none';
+
+  // Reset binary selector
+  document.querySelectorAll('#discovery-question-selector .binary-btn').forEach(b => b.classList.remove('active'));
+
+  // Update dots + back btn
+  updateDiscoveryStepDots();
+  updateDiscoveryBackBtn();
+
+  // Show modal and init discovery map if needed
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+
+  // Pre-fill user GPS location if available
   if (userLocation) {
     streetNoteLocation = { lat: userLocation.lat, lng: userLocation.lng };
-    reverseGeocode(userLocation.lat, userLocation.lng).then(desc => {
-      if (locationDisplay) locationDisplay.value = desc || `${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`;
-    });
-  } else if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        streetNoteLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        reverseGeocode(userLocation.lat, userLocation.lng).then(desc => {
-          if (locationDisplay) locationDisplay.value = desc || `${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`;
-        });
-      },
-      () => {
-        streetNoteLocation = { lat: MELBOURNE_CBD.lat, lng: MELBOURNE_CBD.lng };
-        if (locationDisplay) locationDisplay.value = "Melbourne CBD (default)";
-      }
-    );
   } else {
     streetNoteLocation = { lat: MELBOURNE_CBD.lat, lng: MELBOURNE_CBD.lng };
-    if (locationDisplay) locationDisplay.value = "Melbourne CBD (default)";
   }
 }
 
@@ -2856,6 +3041,83 @@ function closeStreetNoteModal() {
   if (!modal) return;
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
+}
+
+function updateDiscoveryStepDots() {
+  const dotsEl = document.getElementById('discovery-step-dots');
+  if (!dotsEl) return;
+  const dots = dotsEl.querySelectorAll('.wdot');
+  dots.forEach((dot, i) => dot.classList.toggle('active', i === discoveryWizardStep - 1));
+}
+
+function updateDiscoveryBackBtn() {
+  const btn = document.getElementById('discovery-back-btn');
+  if (btn) btn.style.visibility = discoveryWizardStep > 1 ? 'visible' : 'hidden';
+}
+
+function goToDiscoveryStep(step) {
+  const current = document.getElementById(`discovery-step-${discoveryWizardStep}`);
+  if (current) current.style.display = 'none';
+  discoveryWizardStep = step;
+  const next = document.getElementById(`discovery-step-${discoveryWizardStep}`);
+  if (next) next.style.display = '';
+  updateDiscoveryStepDots();
+  updateDiscoveryBackBtn();
+  if (step === 3) {
+    // Init or refresh discovery location map
+    setTimeout(() => {
+      if (!discoveryLocationMap) {
+        initDiscoveryLocationMap();
+      } else {
+        discoveryLocationMap.invalidateSize();
+        if (streetNoteLocation) {
+          discoveryLocationMap.setView([streetNoteLocation.lat, streetNoteLocation.lng], 16);
+          setDiscoveryMarker(streetNoteLocation.lat, streetNoteLocation.lng);
+        }
+      }
+    }, 250);
+  }
+  if (step === 4) buildDiscoveryReviewCard();
+}
+
+function buildDiscoveryReviewCard() {
+  const reviewCard = document.getElementById("discovery-review-card");
+  if (!reviewCard) return;
+  const loc = streetNoteLocation || { lat: MELBOURNE_CBD.lat, lng: MELBOURNE_CBD.lng };
+  const locInput = document.getElementById("street-note-location");
+  const locText = (locInput && locInput.value.trim()) || `${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`;
+  const noteText = discoveryWizardData.note || '';
+  const questionHtml = discoveryWizardData.questionAnswer
+    ? `<div class="review-row"><span class="review-row-icon">💬</span><span class="review-row-label">Status</span><span>${discoveryWizardData.questionAnswer === 'yes' ? 'Yes ✓' : 'No ✗'}</span></div>`
+    : '';
+
+  let photoHtml = '';
+  if (discoveryWizardData.photoDataUrl) {
+    photoHtml = `<img src="${discoveryWizardData.photoDataUrl}" alt="Discovery photo" style="width:100%;height:120px;object-fit:cover;border-radius:10px;margin-bottom:0.625rem;display:block;" />`;
+  }
+
+  reviewCard.innerHTML = `
+    ${photoHtml}
+    <div class="review-row">
+      <span class="review-row-icon">${discoveryWizardData.emoji || '📍'}</span>
+      <span class="review-row-label">Type</span>
+      <span>${discoveryWizardData.label || 'Discovery'}</span>
+    </div>
+    ${questionHtml}
+    ${noteText ? `<div class="review-row"><span class="review-row-icon">📝</span><span class="review-row-label">Note</span><span style="font-size:0.8rem">${noteText.substring(0,80)}${noteText.length>80?'…':''}</span></div>` : ''}
+    <div class="review-row">
+      <span class="review-row-icon">⏳</span>
+      <span class="review-row-label">Duration</span>
+      <span>${noteForever ? 'Forever' : formatDurationText(noteDurationHours)}</span>
+    </div>
+    <div class="review-row">
+      <span class="review-row-icon">📍</span>
+      <span class="review-row-label">Location</span>
+      <span style="font-size:0.8rem">${locText}</span>
+    </div>
+  `;
+  const submitBtn = document.getElementById("street-note-submit");
+  if (submitBtn) submitBtn.disabled = false;
 }
 
 function renderEmojiShortcutBar() {
@@ -2941,162 +3203,116 @@ async function fileToImageDataUrl(file, maxWidth = 1280, maxHeight = 1280, quali
 }
 
 async function submitStreetNote() {
-  const textarea = document.getElementById("street-note-text");
-  const text = textarea ? textarea.value.trim() : "";
-  const locationInput = document.getElementById("street-note-location");
-  const locationText = locationInput ? locationInput.value.trim() : "";
-  const imageInput = document.getElementById("street-note-image");
-  const selectedFile = imageInput && imageInput.files ? imageInput.files[0] : null;
-  
-  if (!text) {
-    alert("Please write something for your note.");
-    return;
-  }
-  
+  const locInput = document.getElementById("street-note-location");
+  const locationText = locInput ? locInput.value.trim() : "";
   const lat = streetNoteLocation ? streetNoteLocation.lat : (userLocation ? userLocation.lat : MELBOURNE_CBD.lat);
   const lng = streetNoteLocation ? streetNoteLocation.lng : (userLocation ? userLocation.lng : MELBOURNE_CBD.lng);
-  
-  const submitBtn = document.getElementById("street-note-submit");
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Posting...";
-  }
-  
-  try {
-    // Optional image: convert to data URL for lightweight local testing
-    let imageUrl = "";
-    if (selectedFile) {
-      // Guard very large files early
-      if (selectedFile.size > 10 * 1024 * 1024) {
-        throw new Error("Image too large. Please choose an image under 10MB.");
-      }
-      // Compress/resize for stable posting in production
-      imageUrl = await fileToImageDataUrl(selectedFile, 1280, 1280, 0.8);
-      // Soft limit after encoding (base64 grows payload)
-      if (imageUrl.length > 2_000_000) {
-        throw new Error("Image is still too large after compression. Try a smaller image.");
-      }
-    }
 
+  // Build note text from question answer + user note
+  let text = discoveryWizardData.note || "";
+  if (discoveryWizardData.questionAnswer && discoveryWizardData.label) {
+    const statusPrefix = discoveryWizardData.questionAnswer === 'yes'
+      ? `${discoveryWizardData.label}: Working`
+      : `${discoveryWizardData.label}: Not working`;
+    text = text ? `${statusPrefix} — ${text}` : statusPrefix;
+  }
+  if (!text && discoveryWizardData.label) {
+    text = `${discoveryWizardData.label} here`;
+  }
+  if (!text) text = "Discovery";
+
+  const submitBtn = document.getElementById("street-note-submit");
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Posting…"; }
+
+  try {
     const response = await fetch(`${API_BASE}/street-notes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        text: text,
+        text,
         latitude: lat,
         longitude: lng,
         location_text: locationText,
-        image_url: imageUrl,
-        emoji: selectedNoteEmoji || null,
+        image_url: discoveryWizardData.photoDataUrl || "",
+        emoji: discoveryWizardData.emoji || null,
         duration_hours: noteForever ? null : noteDurationHours,
         forever: noteForever
       }),
     });
-    
+
     if (response.ok) {
       await fetchStreetNotes();
       closeStreetNoteModal();
+      showToast('📍 Discovery posted!');
     } else {
       const errText = await response.text();
-      throw new Error(`Failed to post note: ${response.status} ${errText}`);
+      throw new Error(`Failed to post: ${response.status} ${errText}`);
     }
   } catch (error) {
-    console.error("Failed to post street note:", error);
-    alert(error && error.message ? error.message : "Failed to post note. Please try again.");
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Post Note";
-    }
+    console.error("Failed to post discovery:", error);
+    alert(error && error.message ? error.message : "Failed to post. Please try again.");
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Post Discovery"; }
   }
 }
 
-function initStreetNoteModal() {
-  // Notes button
-  const notesBtn = document.getElementById("notes-button");
-  if (notesBtn) {
-    notesBtn.addEventListener("click", openStreetNoteModal);
+function initDiscoveryLocationMap() {
+  const container = document.getElementById("discovery-location-map");
+  if (!container || discoveryLocationMap) return;
+
+  const center = streetNoteLocation || userLocation || MELBOURNE_CBD;
+  discoveryLocationMap = L.map("discovery-location-map").setView([center.lat, center.lng], 16);
+  discoveryLocationMap.attributionControl.setPrefix(false);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+    maxZoom: 20,
+    subdomains: "abcd",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  }).addTo(discoveryLocationMap);
+
+  discoveryLocationMap.on("click", (e) => {
+    setDiscoveryMarker(e.latlng.lat, e.latlng.lng);
+  });
+
+  // Place initial marker
+  setDiscoveryMarker(center.lat, center.lng);
+}
+
+function setDiscoveryMarker(lat, lng) {
+  streetNoteLocation = { lat, lng };
+  if (!discoveryLocationMap) return;
+  if (!discoveryLocationMarker) {
+    discoveryLocationMarker = L.marker([lat, lng], { draggable: true }).addTo(discoveryLocationMap);
+    discoveryLocationMarker.on("dragend", (e) => {
+      const pos = e.target.getLatLng();
+      streetNoteLocation = { lat: pos.lat, lng: pos.lng };
+      reverseGeocode(pos.lat, pos.lng).then(desc => {
+        const locInput = document.getElementById("street-note-location");
+        if (locInput && desc) locInput.value = desc;
+      });
+    });
+  } else {
+    discoveryLocationMarker.setLatLng([lat, lng]);
   }
-  
+  discoveryLocationMap.setView([lat, lng], 16);
+  reverseGeocode(lat, lng).then(desc => {
+    const locInput = document.getElementById("street-note-location");
+    if (locInput && desc) locInput.value = desc;
+  });
+}
+
+function initStreetNoteModal() {
+  // Notes button in header nav
+  const notesBtn = document.getElementById("notes-button");
+  if (notesBtn) notesBtn.addEventListener("click", openStreetNoteModal);
+
   // Close button
   const closeBtn = document.getElementById("street-note-close");
-  if (closeBtn) {
-    closeBtn.addEventListener("click", closeStreetNoteModal);
-  }
-  
+  if (closeBtn) closeBtn.addEventListener("click", closeStreetNoteModal);
+
   // Submit button
   const submitBtn = document.getElementById("street-note-submit");
-  if (submitBtn) {
-    submitBtn.addEventListener("click", submitStreetNote);
-  }
+  if (submitBtn) submitBtn.addEventListener("click", submitStreetNote);
 
-  // Use current location button
-  const useLocationBtn = document.getElementById("street-note-use-location");
-  if (useLocationBtn) {
-    useLocationBtn.addEventListener("click", () => {
-      const locationDisplay = document.getElementById("street-note-location");
-      if (!navigator.geolocation) {
-        if (locationDisplay) locationDisplay.textContent = "GPS unavailable on this device";
-        streetNoteLocation = { lat: MELBOURNE_CBD.lat, lng: MELBOURNE_CBD.lng };
-        return;
-      }
-      useLocationBtn.disabled = true;
-      useLocationBtn.textContent = "Getting location...";
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          streetNoteLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          reverseGeocode(streetNoteLocation.lat, streetNoteLocation.lng).then((desc) => {
-            if (locationDisplay) {
-              locationDisplay.value = desc || `${streetNoteLocation.lat.toFixed(4)}, ${streetNoteLocation.lng.toFixed(4)}`;
-            }
-          });
-          useLocationBtn.disabled = false;
-          useLocationBtn.textContent = "Use my current GPS location";
-        },
-        () => {
-          if (locationDisplay) locationDisplay.value = "Could not access GPS location";
-          useLocationBtn.disabled = false;
-          useLocationBtn.textContent = "Use my current GPS location";
-        },
-        { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 }
-      );
-    });
-  }
-  
-  // Character counter
-  const textarea = document.getElementById("street-note-text");
-  if (textarea) {
-    textarea.addEventListener("input", () => {
-      const count = textarea.value.length;
-      const countEl = document.getElementById("street-note-count");
-      if (countEl) countEl.textContent = count;
-      
-      const btn = document.getElementById("street-note-submit");
-      if (btn) btn.disabled = count === 0 || count > 150;
-    });
-  }
-
-  // Image file metadata
-  const imageInput = document.getElementById("street-note-image");
-  if (imageInput) {
-    imageInput.addEventListener("change", () => {
-      const imageMeta = document.getElementById("street-note-image-meta");
-      const file = imageInput.files && imageInput.files[0] ? imageInput.files[0] : null;
-      if (!imageMeta) return;
-      if (!file) {
-        imageMeta.textContent = "No image selected";
-        return;
-      }
-      const kb = Math.round(file.size / 1024);
-      if (kb > 10240) {
-        imageMeta.textContent = `${file.name} (${kb} KB) - too large (max 10MB)`;
-      } else {
-        imageMeta.textContent = `${file.name} (${kb} KB)`;
-      }
-    });
-  }
-  
-  // Duration slider
+  // ── Duration slider + "keep forever" toggle ────────────────────────────
   const durSlider = document.getElementById("street-note-duration");
   const durBubble = document.getElementById("duration-bubble");
   const durPlayer = document.querySelector(".duration-player");
@@ -3112,8 +3328,6 @@ function initStreetNoteModal() {
       }
     });
   }
-
-  // Forever toggle
   const foreverCb = document.getElementById("street-note-forever");
   if (foreverCb) {
     foreverCb.addEventListener("change", () => {
@@ -3123,7 +3337,182 @@ function initStreetNoteModal() {
     });
   }
 
-  // Backdrop click
+  // ── Discovery step 1: category grid ────────────────────────────────────
+  const discCatGrid = document.getElementById("discovery-category-grid");
+  if (discCatGrid) {
+    discCatGrid.addEventListener("click", (e) => {
+      const card = e.target.closest(".cat-card");
+      if (!card) return;
+      discCatGrid.querySelectorAll(".cat-card").forEach(c => c.classList.remove("selected"));
+      card.classList.add("selected");
+      discoveryWizardData.emoji = card.dataset.value;
+      discoveryWizardData.label = card.dataset.label || card.querySelector(".cat-label")?.textContent || '';
+      selectedNoteEmoji = discoveryWizardData.emoji;
+
+      // Update step 2 title
+      const step2Title = document.getElementById("discovery-step2-title");
+      if (step2Title) step2Title.textContent = discoveryWizardData.label || "Discovery Details";
+
+      // Show category-specific question
+      const questionField = document.getElementById("discovery-question-field");
+      const questionLabel = document.getElementById("discovery-question-label");
+      const questionMeta = {
+        '💧': 'Is the fountain working?',
+        '🚻': 'Is it accessible / clean?',
+        '🔌': 'Is it available?',
+      };
+      const q = questionMeta[discoveryWizardData.emoji];
+      if (questionField && questionLabel) {
+        if (q) {
+          questionLabel.textContent = q;
+          questionField.style.display = '';
+        } else {
+          questionField.style.display = 'none';
+        }
+      }
+      // Reset binary selector
+      document.querySelectorAll('#discovery-question-selector .binary-btn').forEach(b => b.classList.remove('active'));
+      discoveryWizardData.questionAnswer = null;
+
+      setTimeout(() => goToDiscoveryStep(2), 180);
+    });
+  }
+
+  // ── Discovery back button ──────────────────────────────────────────────
+  const discBackBtn = document.getElementById("discovery-back-btn");
+  if (discBackBtn) {
+    discBackBtn.addEventListener("click", () => {
+      if (discoveryWizardStep > 1) goToDiscoveryStep(discoveryWizardStep - 1);
+    });
+  }
+
+  // ── Discovery step 2: photo upload ─────────────────────────────────────
+  const discPhotoInput = document.getElementById("street-note-image");
+  if (discPhotoInput) {
+    discPhotoInput.addEventListener("change", async () => {
+      const file = discPhotoInput.files[0];
+      if (!file) return;
+      if (file.size > 10 * 1024 * 1024) { alert("Image too large (max 10MB)."); return; }
+      try {
+        const dataUrl = await fileToImageDataUrl(file, 1280, 1280, 0.8);
+        if (dataUrl.length > 2_000_000) { alert("Image still too large after compression."); return; }
+        discoveryWizardData.photoDataUrl = dataUrl;
+        const preview = document.getElementById("discovery-photo-preview");
+        const placeholder = document.getElementById("discovery-photo-placeholder");
+        const removeBtn = document.getElementById("discovery-photo-remove");
+        if (preview) { preview.src = dataUrl; preview.style.display = 'block'; }
+        if (placeholder) placeholder.style.display = 'none';
+        if (removeBtn) removeBtn.style.display = 'block';
+      } catch (err) { alert(err.message || "Could not load image."); }
+    });
+  }
+  const discPhotoRemove = document.getElementById("discovery-photo-remove");
+  if (discPhotoRemove) {
+    discPhotoRemove.addEventListener("click", (e) => {
+      e.stopPropagation();
+      discoveryWizardData.photoDataUrl = null;
+      const preview = document.getElementById("discovery-photo-preview");
+      const placeholder = document.getElementById("discovery-photo-placeholder");
+      if (preview) { preview.src = ''; preview.style.display = 'none'; }
+      if (placeholder) placeholder.style.display = '';
+      discPhotoRemove.style.display = 'none';
+      if (discPhotoInput) discPhotoInput.value = '';
+    });
+  }
+
+  // ── Discovery step 2: binary question buttons ──────────────────────────
+  const yesBtn = document.getElementById("disc-yes-btn");
+  const noBtn = document.getElementById("disc-no-btn");
+  if (yesBtn) {
+    yesBtn.addEventListener("click", () => {
+      yesBtn.classList.add("active"); if (noBtn) noBtn.classList.remove("active");
+      discoveryWizardData.questionAnswer = 'yes';
+    });
+  }
+  if (noBtn) {
+    noBtn.addEventListener("click", () => {
+      noBtn.classList.add("active"); if (yesBtn) yesBtn.classList.remove("active");
+      discoveryWizardData.questionAnswer = 'no';
+    });
+  }
+
+  // ── Discovery step 2: note textarea ───────────────────────────────────
+  const noteTextarea = document.getElementById("street-note-text");
+  if (noteTextarea) {
+    noteTextarea.addEventListener("input", () => {
+      const count = noteTextarea.value.length;
+      const countEl = document.getElementById("street-note-count");
+      if (countEl) countEl.textContent = count;
+      discoveryWizardData.note = noteTextarea.value;
+    });
+  }
+
+  // ── Discovery step 2: continue ────────────────────────────────────────
+  const disc2Next = document.getElementById("discovery-step2-next");
+  if (disc2Next) disc2Next.addEventListener("click", () => goToDiscoveryStep(3));
+
+  // ── Discovery step 3: use GPS location ────────────────────────────────
+  const useLocBtn = document.getElementById("street-note-use-location");
+  if (useLocBtn) {
+    useLocBtn.addEventListener("click", () => {
+      if (!navigator.geolocation) {
+        streetNoteLocation = { lat: MELBOURNE_CBD.lat, lng: MELBOURNE_CBD.lng };
+        return;
+      }
+      useLocBtn.textContent = "Getting location…";
+      useLocBtn.disabled = true;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setDiscoveryMarker(pos.coords.latitude, pos.coords.longitude);
+          useLocBtn.disabled = false;
+          useLocBtn.innerHTML = '<span>📍</span> Use current location';
+        },
+        () => {
+          useLocBtn.disabled = false;
+          useLocBtn.innerHTML = '<span>📍</span> Use current location';
+          alert("Could not access GPS location.");
+        },
+        { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 }
+      );
+    });
+  }
+
+  // ── Discovery step 3: address search ──────────────────────────────────
+  const discAddrToggle = document.getElementById("discovery-addr-toggle");
+  if (discAddrToggle) {
+    discAddrToggle.addEventListener("click", () => {
+      const row = document.getElementById("discovery-addr-row");
+      if (row) row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+    });
+  }
+  const discSearchGo = document.getElementById("discovery-search-go");
+  if (discSearchGo) {
+    discSearchGo.addEventListener("click", async () => {
+      const input = document.getElementById("street-note-location");
+      if (!input || !input.value.trim()) return;
+      try {
+        const res = await fetch(`${API_BASE}/geocode`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: input.value.trim() }),
+        });
+        const data = await res.json();
+        if (data.success && data.locations && data.locations.length > 0) {
+          const loc = data.locations[0];
+          setDiscoveryMarker(loc.latitude, loc.longitude);
+        } else {
+          alert("No matching locations found.");
+        }
+      } catch (e) { alert("Unable to search address."); }
+    });
+  }
+
+  // ── Discovery step 3: continue ────────────────────────────────────────
+  const disc3Next = document.getElementById("discovery-step3-next");
+  if (disc3Next) disc3Next.addEventListener("click", () => goToDiscoveryStep(4));
+
+  // Backdrop click to close
   const modal = document.getElementById("street-note-modal");
   if (modal) {
     modal.addEventListener("click", (e) => {
@@ -3133,38 +3522,154 @@ function initStreetNoteModal() {
 }
 
 function initModalsAndButtons() {
-  document
-    .getElementById("report-button")
-    .addEventListener("click", openReportModal);
-  document
-    .getElementById("report-close")
-    .addEventListener("click", closeReportModal);
-  document
-    .getElementById("submit-report")
-    .addEventListener("click", submitReport);
-  document
-    .getElementById("address-search-button")
-    .addEventListener("click", geocodeAddress);
-  document
-    .getElementById("use-location")
-    .addEventListener("click", useCurrentLocation);
-  document
-    .getElementById("detail-close")
-    .addEventListener("click", closeDetailModal);
+  // ── Report wizard button bindings ──────────────────────────────────────
+  const reportBtn = document.getElementById("report-button");
+  if (reportBtn) reportBtn.addEventListener("click", openReportModal);
 
-  const identityRadios = document.querySelectorAll(
-    'input[name="identity-mode"]'
-  );
-  const contactFields = document.getElementById("contact-fields");
-  identityRadios.forEach((radio) => {
-    radio.addEventListener("change", () => {
-      if (radio.value === "anonymous" && radio.checked) {
-        contactFields.style.opacity = "0.4";
-      } else if (radio.checked) {
-        contactFields.style.opacity = "1";
+  const reportClose = document.getElementById("report-close");
+  if (reportClose) reportClose.addEventListener("click", closeReportModal);
+
+  const reportBackdrop = document.getElementById("report-modal-backdrop");
+  if (reportBackdrop) reportBackdrop.addEventListener("click", closeReportModal);
+
+  const submitReportBtn = document.getElementById("submit-report");
+  if (submitReportBtn) submitReportBtn.addEventListener("click", submitReport);
+
+  const addrSearchBtn = document.getElementById("address-search-button");
+  if (addrSearchBtn) addrSearchBtn.addEventListener("click", geocodeAddress);
+
+  const useLocBtn = document.getElementById("use-location");
+  if (useLocBtn) useLocBtn.addEventListener("click", useCurrentLocation);
+
+  const detailClose = document.getElementById("detail-close");
+  if (detailClose) detailClose.addEventListener("click", closeDetailModal);
+
+  // ── Report back button ─────────────────────────────────────────────────
+  const reportBackBtn = document.getElementById("report-back-btn");
+  if (reportBackBtn) {
+    reportBackBtn.addEventListener("click", () => {
+      if (reportWizardStep > 1) goToReportStep(reportWizardStep - 1);
+    });
+  }
+
+  // ── Report step 1: category grid — auto-advance ────────────────────────
+  const reportCatGrid = document.getElementById("report-category-grid");
+  if (reportCatGrid) {
+    reportCatGrid.addEventListener("click", (e) => {
+      const card = e.target.closest(".cat-card");
+      if (!card) return;
+      reportCatGrid.querySelectorAll(".cat-card").forEach(c => c.classList.remove("selected"));
+      card.classList.add("selected");
+      reportWizardData.category = card.dataset.value;
+      setTimeout(() => goToReportStep(2), 180);
+    });
+  }
+
+  // ── Report step 2: address toggle ─────────────────────────────────────
+  const reportAddrToggle = document.getElementById("report-addr-toggle");
+  if (reportAddrToggle) {
+    reportAddrToggle.addEventListener("click", () => {
+      const row = document.getElementById("report-addr-row");
+      if (row) row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+    });
+  }
+
+  // ── Report step 2: continue ────────────────────────────────────────────
+  const step2Next = document.getElementById("report-step2-next");
+  if (step2Next) {
+    step2Next.addEventListener("click", () => {
+      if (!locationMarker) {
+        alert("Please set a location first.");
+        return;
+      }
+      goToReportStep(3);
+    });
+  }
+
+  // ── Report step 3: description char count ─────────────────────────────
+  const descInput = document.getElementById("description-input");
+  if (descInput) {
+    descInput.addEventListener("input", () => {
+      const count = document.getElementById("desc-char-count");
+      if (count) count.textContent = descInput.value.length;
+      reportWizardData.description = descInput.value;
+    });
+  }
+
+  // ── Report step 3: urgency buttons ────────────────────────────────────
+  const urgencySelector = document.getElementById("urgency-selector");
+  if (urgencySelector) {
+    urgencySelector.addEventListener("click", (e) => {
+      const btn = e.target.closest(".urg-btn");
+      if (!btn) return;
+      urgencySelector.querySelectorAll(".urg-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      reportWizardData.urgency = btn.dataset.value;
+    });
+  }
+
+  // ── Report step 3: photo upload ────────────────────────────────────────
+  const reportPhotoInput = document.getElementById("report-photo-input");
+  if (reportPhotoInput) {
+    reportPhotoInput.addEventListener("change", async () => {
+      const file = reportPhotoInput.files[0];
+      if (!file) return;
+      try {
+        const dataUrl = await fileToImageDataUrl(file, 1280, 1280, 0.8);
+        reportWizardData.photoDataUrl = dataUrl;
+        const preview = document.getElementById("report-photo-preview");
+        const placeholder = document.getElementById("report-photo-placeholder");
+        const removeBtn = document.getElementById("report-photo-remove");
+        if (preview) { preview.src = dataUrl; preview.style.display = 'block'; }
+        if (placeholder) placeholder.style.display = 'none';
+        if (removeBtn) removeBtn.style.display = 'block';
+      } catch (err) {
+        alert(err.message || "Could not load image.");
       }
     });
-  });
+  }
+  const reportPhotoRemove = document.getElementById("report-photo-remove");
+  if (reportPhotoRemove) {
+    reportPhotoRemove.addEventListener("click", (e) => {
+      e.stopPropagation();
+      reportWizardData.photoDataUrl = null;
+      const preview = document.getElementById("report-photo-preview");
+      const placeholder = document.getElementById("report-photo-placeholder");
+      if (preview) { preview.src = ''; preview.style.display = 'none'; }
+      if (placeholder) placeholder.style.display = '';
+      reportPhotoRemove.style.display = 'none';
+      const photoInput = document.getElementById("report-photo-input");
+      if (photoInput) photoInput.value = '';
+    });
+  }
+
+  // ── Report step 3: continue ────────────────────────────────────────────
+  const step3Next = document.getElementById("report-step3-next");
+  if (step3Next) step3Next.addEventListener("click", () => goToReportStep(4));
+
+  // ── Report step 4: verification options ───────────────────────────────
+  const anonBtn = document.getElementById("verify-anon-btn");
+  const verifiedBtn = document.getElementById("verify-verified-btn");
+  const contactFields = document.getElementById("contact-fields");
+
+  function selectIdentityMode(mode) {
+    reportWizardData.identityMode = mode;
+    const isAnon = mode === 'anonymous';
+    if (anonBtn) anonBtn.classList.toggle('active', isAnon);
+    if (verifiedBtn) verifiedBtn.classList.toggle('active', !isAnon);
+    const anonCheck = document.getElementById("verify-anon-check");
+    const verifiedCheck = document.getElementById("verify-verified-check");
+    if (anonCheck) anonCheck.classList.toggle('verify-check-hidden', !isAnon);
+    if (verifiedCheck) verifiedCheck.classList.toggle('verify-check-hidden', isAnon);
+    if (contactFields) contactFields.style.display = isAnon ? 'none' : 'block';
+  }
+
+  if (anonBtn) anonBtn.addEventListener("click", () => selectIdentityMode('anonymous'));
+  if (verifiedBtn) verifiedBtn.addEventListener("click", () => selectIdentityMode('verified'));
+
+  // ── Report step 4: continue ────────────────────────────────────────────
+  const step4Next = document.getElementById("report-step4-next");
+  if (step4Next) step4Next.addEventListener("click", () => goToReportStep(5));
 }
 
 // Chat functionality
@@ -3201,48 +3706,109 @@ function renderChatMessages() {
   const container = document.getElementById("chat-messages-container");
   if (!container) return;
 
+  container.innerHTML = "";
+  container.appendChild(buildAnnouncementBubble());
+
   if (chatMessages.length === 0) {
-    container.innerHTML = '<div class="chat-loading">No messages yet. Be the first to say something!</div>';
+    const empty = document.createElement("div");
+    empty.className = "chat-loading";
+    empty.textContent = "No messages yet. Be the first to say something!";
+    container.appendChild(empty);
     return;
   }
 
-  container.innerHTML = "";
-  const currentUserId = getChatUserId();
+  // Pinned messages surface at the top in their own banner (admin-decided).
+  const pinned = chatMessages.filter((m) => m.pinned);
+  if (pinned.length) {
+    const pinnedWrap = document.createElement("div");
+    pinnedWrap.className = "chat-pinned";
+    const header = document.createElement("div");
+    header.className = "chat-pinned-header";
+    header.innerHTML = `<span aria-hidden="true">📌</span> Pinned`;
+    pinnedWrap.appendChild(header);
+    pinned.forEach((msg) => pinnedWrap.appendChild(buildChatBubble(msg, true)));
+    container.appendChild(pinnedWrap);
+  }
 
   chatMessages.forEach((msg) => {
-    const messageDiv = document.createElement("div");
-    messageDiv.className = "chat-message";
-    
-    // Check if this is user's own message (by comparing with stored ID or checking timestamp proximity)
-    // For simplicity, we'll just style all messages the same way, but you could add user tracking
-    const isOwn = false; // Could be enhanced with proper user session tracking
-    
-    if (isOwn) {
-      messageDiv.classList.add("own-message");
-    }
-
-    const authorDiv = document.createElement("div");
-    authorDiv.className = "chat-message-author";
-    authorDiv.textContent = msg.author || "Anonymous";
-
-    const textDiv = document.createElement("div");
-    textDiv.className = "chat-message-text";
-    // Escape HTML and preserve line breaks
-    textDiv.textContent = msg.message;
-
-    const timeDiv = document.createElement("div");
-    timeDiv.className = "chat-message-time";
-    const msgTime = typeof msg.timestamp === 'string' ? new Date(msg.timestamp) : msg.timestamp;
-    timeDiv.textContent = formatChatTime(msgTime);
-
-    messageDiv.appendChild(authorDiv);
-    messageDiv.appendChild(textDiv);
-    messageDiv.appendChild(timeDiv);
-    container.appendChild(messageDiv);
+    if (msg.pinned) return;
+    container.appendChild(buildChatBubble(msg, false));
   });
 
   // Scroll to bottom
   container.scrollTop = container.scrollHeight;
+}
+
+function buildAnnouncementBubble() {
+  const messageDiv = document.createElement("div");
+  messageDiv.className = "chat-message chat-announcement";
+  messageDiv.setAttribute("aria-live", "polite");
+
+  const authorDiv = document.createElement("div");
+  authorDiv.className = "chat-message-author";
+  authorDiv.textContent = "Announcement";
+
+  const textDiv = document.createElement("div");
+  textDiv.className = "chat-message-text";
+  textDiv.textContent = liveUpdatesContent || "";
+
+  messageDiv.appendChild(authorDiv);
+  messageDiv.appendChild(textDiv);
+  return messageDiv;
+}
+
+function buildChatBubble(msg, inPinnedSection) {
+  const messageDiv = document.createElement("div");
+  messageDiv.className = "chat-message";
+  if (msg.pinned && !inPinnedSection) messageDiv.classList.add("is-pinned");
+
+  const authorDiv = document.createElement("div");
+  authorDiv.className = "chat-message-author";
+  authorDiv.textContent = msg.author || "Anonymous";
+
+  const textDiv = document.createElement("div");
+  textDiv.className = "chat-message-text";
+  textDiv.textContent = msg.message;
+
+  const timeDiv = document.createElement("div");
+  timeDiv.className = "chat-message-time";
+  const msgTime = typeof msg.timestamp === "string" ? new Date(msg.timestamp) : msg.timestamp;
+  timeDiv.textContent = formatChatTime(msgTime);
+
+  messageDiv.appendChild(authorDiv);
+  messageDiv.appendChild(textDiv);
+  messageDiv.appendChild(timeDiv);
+
+  // Admins can pin/unpin any message
+  if (isAdminLoggedIn) {
+    const pinBtn = document.createElement("button");
+    pinBtn.type = "button";
+    pinBtn.className = "chat-pin-btn";
+    pinBtn.textContent = msg.pinned ? "📌 Unpin" : "📌 Pin";
+    pinBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      togglePinMessage(msg);
+    });
+    messageDiv.appendChild(pinBtn);
+  }
+
+  return messageDiv;
+}
+
+async function togglePinMessage(msg) {
+  try {
+    const res = await fetch(`${API_BASE}/admin/chat/messages/${msg.id}/pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned: !msg.pinned }),
+    });
+    if (!res.ok) throw new Error("Failed to update pin");
+    msg.pinned = !msg.pinned;
+    renderChatMessages();
+  } catch (e) {
+    console.error("Pin toggle failed:", e);
+    alert("Could not update the pin. Please try again.");
+  }
 }
 
 function formatChatTime(date) {
@@ -3304,6 +3870,9 @@ function openChatModal() {
 
   chatModal.classList.remove("hidden");
   chatModal.setAttribute("aria-hidden", "false");
+
+  // Show admin scrolling announcement at top of chat
+  displayLiveUpdates();
   
   // Load messages when opening
   fetchChatMessages();
@@ -3751,11 +4320,11 @@ async function fetchWelcomeNotice() {
 <h3>Report an Incident</h3>
 <p>Spotted something the community should know about? Tap <strong>Report Incident</strong> to pin it on the map. Category and urgency help others filter; description is optional.</p>
 
-<h3>Street Notes</h3>
-<p>Drop a quick tip for those nearby — a free drinking fountain, a toilet, cheap eats, a parking spot, live music, and more.</p>
+<h3>Community Discoveries</h3>
+<p>Share quick community tips — a free drinking fountain, a toilet, cheap eats, a parking spot, live music, and more.</p>
 <ul>
-<li>Tap a shortcut emoji to auto-fill the note (💧 🚽 🧋 ☕ 🍜 🅿️ 🎵 and more)</li>
-<li>Set how long it lasts — 1 hour up to 3 days, or keep it forever</li>
+<li>Tap <strong>Discoveries</strong> or the + button to start sharing</li>
+<li>Choose a category, add a photo, and confirm the location in a few taps</li>
 </ul>
 
 <h3>Your Avatar</h3>
@@ -3925,13 +4494,8 @@ async function showEditWelcomeNoticeModal() {
 <h3>🚨 Report Incidents</h3>
 <p>Spotted something the community should know about? Tap <strong>Report Incident</strong> to flag it on the map. Description is optional — share as much or as little as you like.</p>
 
-<h3>📝 Street Notes</h3>
-<p>Share quick tips with your neighbours — where the nearest toilet is, a milk-tea deal, a busker worth checking out, or just a thought about the moment.</p>
-<ul>
-<li>Tap a quick-shortcut emoji to auto-fill your note (🚽 ☕ 🧋 🍜 🅿️ 🎵 ❤️ 😊 and more)</li>
-<li>Choose how long it lasts — from <strong>1 hour</strong> up to <strong>3 days</strong>, or keep it <strong>forever</strong></li>
-<li>Add an optional image; everything else is optional too</li>
-</ul>
+<h3>📍 Community Discoveries</h3>
+<p>Share quick tips with your neighbours — where the nearest toilet is, a coffee deal, a busker worth checking out, and more. Tap <strong>Discoveries</strong> or the <strong>+</strong> button to get started.</p>
 
 <h3>🗺️ Map Tricks</h3>
 <ul>
@@ -4071,6 +4635,145 @@ function initHighlightStreetModal() {
       }
     });
   });
+}
+
+function openActionSheet() {
+  const overlay = document.getElementById("action-sheet-overlay");
+  const fab = document.getElementById("fab-button");
+  if (overlay) { overlay.classList.remove("hidden"); overlay.setAttribute("aria-hidden", "false"); }
+  if (fab) fab.classList.add("fab-open");
+}
+
+function closeActionSheet() {
+  const overlay = document.getElementById("action-sheet-overlay");
+  const fab = document.getElementById("fab-button");
+  if (overlay) { overlay.classList.add("hidden"); overlay.setAttribute("aria-hidden", "true"); }
+  if (fab) fab.classList.remove("fab-open");
+}
+
+function initFab() {
+  const fab = document.getElementById("fab-button");
+  if (fab) fab.addEventListener("click", openActionSheet);
+
+  const backdrop = document.getElementById("action-sheet-backdrop");
+  if (backdrop) backdrop.addEventListener("click", closeActionSheet);
+
+  const cancelBtn = document.getElementById("action-sheet-cancel");
+  if (cancelBtn) cancelBtn.addEventListener("click", closeActionSheet);
+
+  const reportBtn = document.getElementById("action-report-btn");
+  if (reportBtn) {
+    reportBtn.addEventListener("click", () => {
+      closeActionSheet();
+      setTimeout(() => openReportModal(), 100);
+    });
+  }
+
+  const discoveryBtn = document.getElementById("action-discovery-btn");
+  if (discoveryBtn) {
+    discoveryBtn.addEventListener("click", () => {
+      closeActionSheet();
+      setTimeout(() => openStreetNoteModal(), 100);
+    });
+  }
+
+  const emergencyBtn = document.getElementById("action-emergency-btn");
+  if (emergencyBtn) {
+    let emgPressTimer = null;
+    let emgLongPressed = false;
+    const clearPress = () => { if (emgPressTimer) { clearTimeout(emgPressTimer); emgPressTimer = null; } };
+    // Press-and-hold to edit the saved contact
+    emergencyBtn.addEventListener("pointerdown", () => {
+      emgLongPressed = false;
+      emgPressTimer = setTimeout(() => {
+        emgLongPressed = true;
+        closeActionSheet();
+        openEmergencyModal(true);
+      }, 600);
+    });
+    emergencyBtn.addEventListener("pointerup", clearPress);
+    emergencyBtn.addEventListener("pointerleave", clearPress);
+    emergencyBtn.addEventListener("pointercancel", clearPress);
+
+    emergencyBtn.addEventListener("click", () => {
+      if (emgLongPressed) { emgLongPressed = false; return; }
+      clearPress();
+      closeActionSheet();
+      const contact = getEmergencyContact();
+      if (contact && contact.number) {
+        // Already set → dial straight away
+        window.location.href = "tel:" + contact.number.replace(/[^0-9+]/g, "");
+      } else {
+        // First use → set it up
+        setTimeout(() => openEmergencyModal(false), 100);
+      }
+    });
+  }
+}
+
+const EMERGENCY_CONTACT_KEY = "emergencyContact_v1";
+
+function getEmergencyContact() {
+  try {
+    const raw = localStorage.getItem(EMERGENCY_CONTACT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.number ? parsed : null;
+  } catch { return null; }
+}
+
+function saveEmergencyContact(contact) {
+  try { localStorage.setItem(EMERGENCY_CONTACT_KEY, JSON.stringify(contact)); }
+  catch (e) { console.error("Failed to save emergency contact:", e); }
+}
+
+function openEmergencyModal(forceSetup) {
+  const modal = document.getElementById("emergency-contact-modal");
+  if (!modal) return;
+  const contact = getEmergencyContact();
+  const setup = document.getElementById("emergency-setup");
+  const saved = document.getElementById("emergency-saved");
+  const title = document.getElementById("emergency-title");
+
+  if (contact && !forceSetup) {
+    setup.style.display = "none";
+    saved.style.display = "";
+    title.textContent = "Emergency contact";
+    document.getElementById("emergency-saved-name").textContent = contact.name || "My contact";
+    document.getElementById("emergency-saved-number").textContent = contact.number;
+    const callBtn = document.getElementById("emergency-call-btn");
+    if (callBtn) callBtn.href = "tel:" + contact.number.replace(/[^0-9+]/g, "");
+  } else {
+    setup.style.display = "";
+    saved.style.display = "none";
+    title.textContent = contact ? "Edit emergency contact" : "Set emergency contact";
+    document.getElementById("emergency-name").value = contact ? (contact.name || "") : "";
+    document.getElementById("emergency-number").value = contact ? (contact.number || "") : "";
+  }
+
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+}
+
+function initEmergencyContact() {
+  const modal = document.getElementById("emergency-contact-modal");
+  if (!modal) return;
+  const close = () => {
+    modal.classList.add("hidden");
+    modal.setAttribute("aria-hidden", "true");
+  };
+  document.getElementById("emergency-close")?.addEventListener("click", close);
+  modal.addEventListener("click", (e) => { if (e.target === modal) close(); });
+
+  document.getElementById("emergency-save")?.addEventListener("click", () => {
+    const name = document.getElementById("emergency-name").value.trim();
+    const number = document.getElementById("emergency-number").value.trim();
+    if (!number) { alert("Please enter a phone number."); return; }
+    saveEmergencyContact({ name, number });
+    openEmergencyModal(false); // show saved view with Call now
+  });
+
+  document.getElementById("emergency-edit-btn")?.addEventListener("click", () => openEmergencyModal(true));
 }
 
 function initChat() {
@@ -4257,18 +4960,20 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   initMap();
   initLocationMap();
-  initViewToggle();
+  initViewControls();
   initFilters();
+  initLayersSheet();
+  initMapHeader();
+  initLocateButton();
   initModalsAndButtons();
-  initChipSelection("category-chips");
-  initChipSelection("urgency-chips");
   initAdminModal();
   initAvatarPicker();
   setupEditForm();
+  initFab();
   initChat();
+  initEmergencyContact();
   initHighlightStreetModal();
   initStreetNoteModal();
-  initCollapsibleHeader();
   initPeerBroadcasting();
 
   await waitForBackend();

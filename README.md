@@ -1,54 +1,111 @@
 # Melbourne Community Map
 
-A community-driven safety and awareness web app for Melbourne. Users can report incidents, drop short-lived street notes, pick an emoji avatar that appears on the map live, chat in real time, and admins can highlight street segments with context. Installable as a PWA on mobile and desktop.
+A community-driven safety and awareness web app for Melbourne. Users can report incidents, drop short-lived street notes, see official drinking fountains and public toilets, pick an emoji avatar that appears on the map live, chat in real time, and admins can highlight street segments with context. Installable as a PWA on mobile and desktop.
 
-> **Live stack:** static frontend on **Netlify** · FastAPI backend on **Render** · **MongoDB Atlas** for data · **Leaflet + CARTO Voyager** for the map · GitHub-driven auto-deploy on every push to `main`.
+> **Live stack:** static frontend on **Netlify** · FastAPI backend on **Render** · **MongoDB Atlas** for data · **Leaflet + CARTO Voyager** for the map · **Leaflet.markercluster** for pin grouping · GitHub auto-deploy on push to `main`.
+
+**Tagline:** *see it, post it, sort it*
 
 ---
 
 ## Table of contents
 
 1. [What the app does](#what-the-app-does)
-2. [Architecture overview](#architecture-overview)
-3. [Project structure](#project-structure)
-4. [How it is deployed (Netlify + Render + MongoDB)](#how-it-is-deployed-netlify--render--mongodb)
-5. [Local development](#local-development)
-6. [Backend reference](#backend-reference)
-7. [Frontend reference](#frontend-reference)
-8. [Day-to-day workflow](#day-to-day-workflow)
-9. [Next steps / roadmap](#next-steps--roadmap)
+2. [Map design](#map-design)
+3. [Architecture overview](#architecture-overview)
+4. [Project structure](#project-structure)
+5. [How it is deployed](#how-it-is-deployed)
+6. [Local development](#local-development)
+7. [Official POI data](#official-poi-data)
+8. [Backend reference](#backend-reference)
+9. [Frontend reference](#frontend-reference)
+10. [Day-to-day workflow](#day-to-day-workflow)
+11. [Roadmap](#roadmap)
+12. [License & attribution](#license--attribution)
 
 ---
 
 ## What the app does
 
-**Public users can:**
-- See community-reported incidents on an interactive map (Leaflet) and a filterable list.
-- Filter by category (Protest, Theft, Harassment, Anti-social, Other), urgency, and time window (2h / 4h / 6h / 24h).
-- Report an incident with GPS, address search, or pin-drop on a mini-map. Description is optional. Photos can be attached and are compressed client-side.
-- Drop a **Street Note** — a short-lived community tip (drinking fountain, water, toilet, parking, food deal, busker, etc.) with an optional emoji shortcut, an optional image, a custom duration slider (1 hour – 3 days), or a "Keep forever" toggle.
-- React to incidents (👍 / 👎).
-- **Choose an emoji avatar** (🐶 🐱 🐺 🦊 🦝 🦁 🐯 🐷 🐭 🐰 🐼 🐻 🐨 or anonymous 🚫) and set a **title** (display name). The avatar appears on the map at the user's GPS location; tapping it shows the title. The title is also used as the chat author name.
-- Join an anonymous community **Group Chat** linked to the live updates banner. Messages auto-clear every 24 hours.
-- See a "**Welcome Notice**" popup on every page load (closable, admin-editable).
-- Install the site as a **Progressive Web App** with offline shell support and an app icon on the home screen.
-- Use the app in **light or dark mode** — the UI automatically follows your device or browser theme (`prefers-color-scheme`), with readable text and consistent frosted-glass panels on the map in both modes.
+### Public users
 
-**Admins (accessed by tapping the M logo 10 times) can:**
-- Edit / delete any incident, including ones submitted with verified contact info.
-- **Highlight street segments** with two pin-drops, a colour (Red / Yellow / Green), a reason, and a description. Users tap highlights to read the context.
-- Edit or delete street highlights at any time.
-- Delete any street note (including "forever" notes).
-- Edit the rotating **Live Updates** banner text.
-- Edit the **Welcome Notice** popup content.
-- View a dashboard with all incidents, highlights, and street notes.
+- **Incidents** — Report protests, theft, harassment, anti-social behaviour, or other events with GPS, address search, or pin-drop. Optional description and photo (client-side compressed). Filter by category, urgency, and time (2h / 4h / 6h).
+- **Street notes** — Short community tips (fountain, toilet, coffee, food, parking, music, mood emojis, etc.) with optional image, duration (1 hour – 3 days), or “Keep forever”.
+- **Official amenities** — City of Melbourne **drinking fountains** (~302) and **public toilets** (~74) as static reference layers. Toggle on from the map; off by default so the map stays uncluttered.
+- **Map + list views** — Interactive map with filterable list. List supports incidents, notes, and official POIs by category.
+- **Reactions** — 👍 / 👎 on incidents.
+- **Avatar & presence** — Choose an emoji avatar and display title; your marker appears on the map at GPS. Peer locations sync across devices via `/api/peers`.
+- **Group chat** — Anonymous chat linked to the live-updates banner; messages auto-clear after 24 hours.
+- **Welcome notice** — Admin-editable popup on load.
+- **PWA** — Install to home screen; offline shell via service worker.
+- **Theming** — Light and dark mode via `prefers-color-scheme`, with frosted-glass map chrome in both.
 
-**Background behaviour:**
-- Incidents older than 6 hours auto-purge on next fetch.
-- Chat messages older than 24 hours auto-purge.
-- Non-permanent street notes auto-purge when their `expires_at` passes.
-- Active-user heartbeats are recorded server-side to power the "X people active on the map" badge.
-- A one-time **content migration** runs on backend startup to refresh the default Live Updates text and Welcome Notice when a new content version is shipped.
+### Admins (tap the **M** logo 10 times)
+
+- Edit / delete incidents (including verified contact info).
+- Draw **street highlights** (two pins, colour, reason, description).
+- Delete any street note (including permanent).
+- Edit live-updates banner and welcome notice.
+- Dashboard for incidents, highlights, and notes.
+
+### Background behaviour
+
+- Incidents older than **6 hours** auto-purge on fetch.
+- Chat messages older than **24 hours** auto-purge.
+- Street notes expire per `expires_at` (unless `forever`).
+- Peer markers drop off after **60 seconds** without a heartbeat.
+- Content migrations run on backend startup when shipped defaults change.
+
+---
+
+## Map design
+
+The map is the primary surface. Layers stack as follows:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  CARTO Voyager basemap                                      │
+├─────────────────────────────────────────────────────────────┤
+│  Admin street highlights (polylines, bottom-left legend)    │
+├─────────────────────────────────────────────────────────────┤
+│  Incidents (emoji pins, urgency colour) — always on         │
+│  Street notes (emoji pins) — toggle: Notes                  │
+│  Drinking fountains 💧 (official) — toggle: Fountains       │
+│  Public toilets 🚽 (official) — toggle: WC                  │
+│  Peer avatars (other users + self)                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Marker clustering
+
+All pin layers use **Leaflet.markercluster** when zoomed out:
+
+| Layer | Cluster colour | Individual pin |
+|-------|----------------|----------------|
+| Incidents | Red | Category emoji on urgency background |
+| Street notes | Blue | Note emoji |
+| Drinking fountains | Blue | 💧 on light-blue circle |
+| Public toilets | Purple | 🚽 on light-purple circle |
+
+Clusters show a **count**. Zoom in (clustering disables at zoom **17**) or tap a cluster to expand. Spiderfy at max zoom when pins overlap.
+
+### Map controls (bottom-right)
+
+Compact **text toggles** (no switch widgets), stacked vertically:
+
+1. **Notes** — on by default  
+2. **Fountains** — off by default  
+3. **WC** — off by default  
+
+Active = bold text; inactive = faded. Positioned above the OpenStreetMap / CARTO attribution to reduce overlap.
+
+Other controls: zoom (+/−), locate-me (top-left), street-highlights legend (bottom-left), exit-fullscreen on mobile when header is collapsed.
+
+### List view filters
+
+- **Incidents only** / **All (Incidents + Notes)** / per-category filters.
+- **💧 Drinking fountain** and **🚽 Toilet** street notes are **hidden** in “All” and “All Street Notes” aggregates — select those categories explicitly to see user tips *and* official POIs.
+- Official fountains and toilets appear in list only when the matching note category is selected.
 
 ---
 
@@ -57,56 +114,43 @@ A community-driven safety and awareness web app for Melbourne. Users can report 
 ```
                 ┌────────────────────────────────────────────┐
                 │            User's browser / PWA            │
-                │   index.html · app.js · styles.css · sw.js │
+                │  index.html · app.js · styles.css · sw.js  │
+                │  + /data/*.json (official POIs, static)    │
                 └──────────────┬─────────────────────────────┘
                                │   HTTPS (CORS)
                                ▼
         ┌────────────────────────────────────────────────────┐
-        │  Netlify (free tier)                               │
-        │  - Serves the static frontend from /frontend       │
-        │  - Auto-deploy on push to GitHub main              │
-        │  - _headers + netlify.toml for PWA + redirects     │
+        │  Netlify                                           │
+        │  Publishes frontend/ · auto-deploy on push         │
         └──────────────┬─────────────────────────────────────┘
-                       │  fetch() calls to /api/*
+                       │  fetch() → /api/*
                        ▼
         ┌────────────────────────────────────────────────────┐
-        │  Render.com (free tier)                            │
-        │  - Hosts the FastAPI app (backend/server.py)       │
-        │  - Build:  pip install -r backend/requirements.txt │
-        │  - Start:  uvicorn server:app --host 0.0.0.0       │
-        │            --port $PORT                            │
-        │  - Sleeps after 15 min idle (cold-start handled    │
-        │    by a friendly "waking up" loading overlay)      │
-        │  - Auto-deploy on push to GitHub main              │
+        │  Render.com                                        │
+        │  FastAPI (backend/server.py) · uvicorn             │
+        │  Cold-start overlay if first ping is slow          │
         └──────────────┬─────────────────────────────────────┘
-                       │  Motor (async driver, mongodb+srv://)
+                       │  Motor (mongodb+srv://)
                        ▼
         ┌────────────────────────────────────────────────────┐
-        │  MongoDB Atlas (free M0 cluster)                   │
-        │  Database: community_map                           │
-        │  Collections:                                      │
-        │    incidents · active_users · chat_messages       │
-        │    live_updates · street_highlights · street_notes │
-        │    welcome_notice · migrations                     │
+        │  MongoDB Atlas (M0)                                │
+        │  incidents · street_notes · street_highlights ·    │
+        │  chat_messages · peers · active_users · …          │
         └────────────────────────────────────────────────────┘
 
-        Map tiles:  CARTO Voyager raster tiles (free, no API key)
-        Geocoding:  OpenStreetMap Nominatim (free, attribution required)
+        Map tiles:     CARTO Voyager (no API key)
+        Clustering:    leaflet.markercluster (CDN)
+        Geocoding:     OpenStreetMap Nominatim
+        Official POIs: City of Melbourne open data → JSON in repo
 ```
 
-**Why this stack?**
-
-| Concern              | Choice              | Why                                                                     |
-| -------------------- | ------------------- | ----------------------------------------------------------------------- |
-| Hosting frontend     | Netlify             | Free tier + auto-deploy from GitHub + global CDN + easy custom headers. |
-| Hosting backend      | Render              | Free tier with managed HTTPS + auto-deploy + clean env-var UX.          |
-| Database             | MongoDB Atlas (M0)  | Free, fully managed, generous for early-stage apps, easy schema.        |
-| API framework        | FastAPI             | Async, fast, Pydantic validation, free OpenAPI docs at `/docs`.         |
-| Frontend framework   | None (vanilla JS)   | Zero build step → trivial deploys, fewer moving parts.                  |
-| Map library          | Leaflet             | Free, mature, full control, works with any tile source.                 |
-| Map tiles            | CARTO Voyager       | Google-Maps-like look, free, no API key, retina-ready, CDN-hosted.      |
-| PWA shell            | manifest.json + sw.js | Native-app feel on phones without an App Store release.               |
-| Theming              | CSS custom properties | Light/dark mode via `prefers-color-scheme`; frosted glass map overlays. |
+| Concern | Choice | Why |
+|---------|--------|-----|
+| Frontend | Vanilla JS, no build step | Simple Netlify deploys |
+| Map | Leaflet + markercluster | Free, mature, clusters dense POIs |
+| Tiles | CARTO Voyager | Clean look, retina, no key |
+| API | FastAPI + Motor | Async, typed, `/docs` |
+| Official POIs | Static JSON + scripts | Fast map load; refreshable from council data |
 
 ---
 
@@ -115,100 +159,54 @@ A community-driven safety and awareness web app for Melbourne. Users can report 
 ```
 EmergentApp1/
 ├── backend/
-│   ├── server.py              # All FastAPI routes, models, and DB logic
-│   ├── requirements.txt       # Python dependencies (pinned)
-│   └── .env                   # Local secrets (MONGO_URL, ADMIN_PIN, ...) — gitignored
+│   ├── server.py              # FastAPI routes, models, DB logic
+│   ├── requirements.txt
+│   └── .env                   # gitignored — MONGO_URL, ADMIN_PIN, …
 │
-├── frontend/                  # Static site root (Netlify publish dir)
-│   ├── index.html             # App shell, modals, PWA meta tags
-│   ├── app.js                 # All client logic (map, modals, API calls, PWA)
-│   ├── styles.css             # Full UI styling, mobile-first, light/dark theme tokens, frosted glass map chrome
-│   ├── manifest.json          # PWA manifest (name, icons, theme, standalone)
-│   ├── sw.js                  # Service worker — caches static shell, network-first for /api
-│   ├── _headers               # Netlify headers (Service-Worker-Allowed, manifest MIME)
-│   └── icons/                 # PWA icons (72, 96, 128, 144, 152, 192, 384, 512 px)
+├── frontend/
+│   ├── index.html             # App shell, modals, PWA meta, CDN scripts
+│   ├── app.js                 # Map, list, API, clustering, layers
+│   ├── styles.css             # UI + light/dark tokens + map chrome
+│   ├── manifest.json
+│   ├── sw.js
+│   ├── _headers
+│   ├── icons/
+│   ├── data/
+│   │   ├── melbourne-drinking-fountains.json   # ~302 fountains
+│   │   ├── melbourne-public-toilets.json       # ~74 toilets
+│   │   └── public-toilets-source.csv           # rebuild source
+│   ├── privacy.html · terms.html · support.html
 │
-├── render.yaml                # Render infra-as-code (services + env vars)
-├── netlify.toml               # Netlify build + redirects config
-├── DEPLOYMENT.md              # Step-by-step deploy walkthrough
-├── MANUAL_DEPLOY.md           # Manual / emergency deploy procedure
-├── LEARNING.md                # Curated ChatGPT prompts for learning the stack
-└── README.md                  # This file
+├── scripts/
+│   ├── build_drinking_fountains.py   # API → JSON
+│   └── build_public_toilets.py       # CSV → JSON
+│
+├── store/                     # PWA / Play Store audit notes
+├── netlify.toml
+├── render.yaml
+├── DEPLOYMENT.md
+└── README.md
 ```
 
 ---
 
-## How it is deployed (Netlify + Render + MongoDB)
+## How it is deployed
 
-### 1. Source of truth: GitHub
-
-Both Netlify and Render are connected to the GitHub repository. Every `git push origin main` triggers an automatic rebuild on both platforms in parallel.
-
-### 2. Frontend on Netlify
-
-- **Repo subdirectory published:** `frontend/`
-- **Build command:** none (static).
-- **Auto-publish:** on push to `main`.
-- **Special files:**
-  - `netlify.toml` sets the publish folder and SPA-style fallback.
-  - `_headers` adds `Service-Worker-Allowed: /` so the PWA service worker can control the whole origin, and sets the correct MIME type for `manifest.json`.
-- **HTTPS:** automatic via Let's Encrypt.
-- **CDN:** Netlify serves from edge locations worldwide.
-
-### 3. Backend on Render
-
-- **Service type:** Web Service (Python).
-- **Build command:** `pip install -r backend/requirements.txt`
-- **Start command:** `cd backend && uvicorn server:app --host 0.0.0.0 --port $PORT`
-- **Environment variables** (configured in the Render dashboard, never committed):
-  - `MONGO_URL` — MongoDB Atlas SRV connection string.
-  - `DB_NAME` — `community_map`.
-  - `CORS_ORIGINS` — `*` for now (tighten to the Netlify domain later).
-  - `ADMIN_ACCOUNT` — admin username.
-  - `ADMIN_PIN` — admin PIN.
-  - `PYTHON_VERSION` — `3.11.0`.
-- **Free-tier behaviour:** the service sleeps after ~15 minutes of inactivity. The frontend handles this gracefully with a "waking up the server" loading overlay (themed branding + animated spinner) that only appears if the first ping is slow.
-- **Auto-deploy:** on push to `main`.
-
-### 4. Database on MongoDB Atlas
-
-- **Tier:** free M0 shared cluster.
-- **Database:** `community_map`.
-- **Driver:** [`motor`](https://motor.readthedocs.io/) — the official async Python driver.
-- **Network access:** `0.0.0.0/0` (open) for now, since Render does not publish fixed egress IPs on the free tier. Authentication is enforced via the connection-string credentials.
-- **Collections used:**
-  | Collection         | Purpose                                                                       |
-  | ------------------ | ----------------------------------------------------------------------------- |
-  | `incidents`        | All user-reported incidents. Auto-purged after 6 hours.                       |
-  | `active_users`     | Heartbeat-based session tracking for the "active on the map" badge.           |
-  | `chat_messages`    | Group chat. Auto-purged after 24 hours.                                       |
-  | `live_updates`     | Single document holding the admin-editable rotating banner text.              |
-  | `street_highlights`| Admin-drawn polyline highlights with colour, reason, and description.         |
-  | `street_notes`     | Short-lived community tips. Auto-purged via `expires_at`.                     |
-  | `welcome_notice`   | Single document holding the admin-editable welcome popup HTML.                |
-  | `migrations`       | Markers for one-time content migrations on backend startup.                   |
-
-### 5. The deploy cycle in practice
+1. **GitHub** — `main` is source of truth.
+2. **Netlify** — publishes `frontend/` on every push to `main` (no build command).
+3. **Render** — `pip install -r backend/requirements.txt`, then `uvicorn server:app --host 0.0.0.0 --port $PORT`.
+4. **MongoDB Atlas** — `community_map` database; network `0.0.0.0/0` on free tier.
 
 ```bash
-# 1. Make changes locally
-git status
-git diff
-
-# 2. Stage and commit
 git add .
-git commit -m "feat: add CARTO Voyager map tiles"
-
-# 3. Push — this triggers BOTH deploys
+git commit -m "feat: your change"
 git push origin main
-
-# 4. Watch the deploys
-#    Netlify:  https://app.netlify.com/sites/<your-site>/deploys
-#    Render:   https://dashboard.render.com → service → Events / Logs
-
-# 5. Hard-refresh the live site to bust the service worker cache
-#    (Ctrl+Shift+R on desktop, or close and reopen the PWA)
+# Netlify + Render rebuild in parallel
 ```
+
+Hard-refresh (Ctrl+Shift+R) or bump `CACHE_NAME` in `sw.js` after deploys.
+
+**Snapshot branches** (e.g. `snapshot/map-fountains-wc-clustering`) can be used to freeze a release without touching `main`.
 
 ---
 
@@ -217,23 +215,18 @@ git push origin main
 ### Prerequisites
 
 - Python 3.11+
-- A MongoDB Atlas connection string (free M0 cluster is fine)
-- PowerShell (Windows) or bash (macOS/Linux)
+- MongoDB Atlas connection string
 
 ### Backend
 
 ```bash
 cd backend
-
-# Create and activate a virtual environment
 python -m venv .venv
-.venv\Scripts\Activate.ps1     # PowerShell
-# source .venv/bin/activate    # bash
-
+.venv\Scripts\Activate.ps1          # Windows PowerShell
 pip install -r requirements.txt
 ```
 
-Create `backend/.env`:
+`backend/.env`:
 
 ```env
 MONGO_URL=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?appName=Cluster0
@@ -243,17 +236,15 @@ ADMIN_ACCOUNT=admin
 ADMIN_PIN=123456
 ```
 
-Run the server:
-
 ```bash
 uvicorn server:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Interactive API docs available at `http://localhost:8000/docs`.
+API docs: `http://localhost:8000/docs`
 
 ### Frontend
 
-The frontend automatically detects `localhost` and points to `http://localhost:8000/api` (see top of `frontend/app.js`).
+`app.js` uses `http://localhost:8000/api` when hostname is `localhost` or `127.0.0.1`.
 
 ```bash
 cd frontend
@@ -262,148 +253,116 @@ python -m http.server 5173
 
 Open `http://localhost:5173`.
 
-> ⚠️ **PWA gotcha during local dev:** the service worker caches aggressively. If a change isn't appearing, open DevTools → Application → Service Workers → **Unregister**, then hard-refresh.
+> **PWA tip:** Unregister the service worker in DevTools if cached assets block your changes.
+
+---
+
+## Official POI data
+
+| Dataset | Count | Source | Rebuild |
+|---------|-------|--------|---------|
+| Drinking fountains | ~302 | [City of Melbourne open data](https://data.melbourne.vic.gov.au/explore/dataset/drinking-fountains) | `python scripts/build_drinking_fountains.py` |
+| Public toilets | ~74 | `frontend/data/public-toilets-source.csv` | `python scripts/build_public_toilets.py` |
+
+Output JSON lives in `frontend/data/` and is served statically by Netlify. Toilet records include female / male / wheelchair / baby-change flags shown in map popups.
+
+After rebuilding, commit the updated JSON and push.
 
 ---
 
 ## Backend reference
 
-All routes are under `/api`. Full details and try-it-out forms at `/docs` on the running server.
+All routes under `/api`. Interactive docs at `/docs`.
 
-### Public endpoints
+### Public
 
-| Method | Path                                  | Description                                                      |
-| ------ | ------------------------------------- | ---------------------------------------------------------------- |
-| GET    | `/api/`                               | Health check.                                                    |
-| POST   | `/api/geocode`                        | Geocode an address via OpenStreetMap Nominatim.                  |
-| GET    | `/api/incidents?hours=2\|4\|6`        | List recent incidents (auto-purges anything > 6h).               |
-| POST   | `/api/incidents`                      | Create an incident; clusters with neighbours within 500 m.       |
-| POST   | `/api/incidents/{id}/react`           | Add a 👍 or 👎 reaction.                                          |
-| POST   | `/api/users/heartbeat/{session_id}`   | Record a heartbeat → returns active-user count.                  |
-| GET    | `/api/chat/messages`                  | Fetch chat messages (auto-purges > 24h).                         |
-| POST   | `/api/chat/messages`                  | Post a chat message.                                             |
-| GET    | `/api/live-updates`                   | Get the rotating banner content.                                 |
-| GET    | `/api/street-highlights`              | List all admin-drawn street highlights.                          |
-| GET    | `/api/street-notes`                   | List active street notes (auto-purges expired non-permanent ones). |
-| POST   | `/api/street-notes`                   | Create a street note with optional emoji, image, duration, forever flag. |
-| GET    | `/api/welcome-notice`                 | Get the welcome popup content.                                   |
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/` | Health check |
+| POST | `/api/geocode` | Nominatim geocoding |
+| GET | `/api/incidents?hours=` | List incidents (purges > 6h) |
+| POST | `/api/incidents` | Create incident |
+| POST | `/api/incidents/{id}/react` | 👍 / 👎 |
+| POST | `/api/users/heartbeat/{session_id}` | Active-user count |
+| GET/POST | `/api/chat/messages` | Group chat |
+| GET | `/api/live-updates` | Banner text |
+| GET | `/api/street-highlights` | Admin polylines |
+| GET/POST | `/api/street-notes` | Community tips |
+| GET | `/api/welcome-notice` | Welcome popup HTML |
+| POST | `/api/peers` | Upsert live avatar location |
+| GET | `/api/peers` | List active peers (60s TTL) |
+| DELETE | `/api/peers/{peer_id}` | Remove peer (e.g. go anonymous) |
 
-### Admin endpoints (require `/api/admin/verify` first)
+### Admin (after `/api/admin/verify`)
 
-| Method | Path                                          | Description                              |
-| ------ | --------------------------------------------- | ---------------------------------------- |
-| POST   | `/api/admin/verify`                           | Verify account + PIN.                    |
-| GET    | `/api/admin/incidents`                        | All incidents incl. contact info.        |
-| PUT    | `/api/admin/incidents/{id}`                   | Edit incident.                           |
-| DELETE | `/api/admin/incidents/{id}`                   | Delete incident.                         |
-| POST   | `/api/admin/live-updates`                     | Update banner text.                      |
-| POST   | `/api/admin/street-highlights`                | Create a highlight.                      |
-| PUT    | `/api/admin/street-highlights/{id}`           | Edit highlight colour / description.     |
-| DELETE | `/api/admin/street-highlights/{id}`           | Delete highlight.                        |
-| DELETE | `/api/admin/street-notes/{id}`                | Delete any note (incl. permanent).       |
-| POST   | `/api/admin/welcome-notice`                   | Update welcome popup content.            |
+Incidents CRUD, live-updates, street-highlights CRUD, street-notes delete, welcome-notice update.
+
+### Collections
+
+`incidents` · `street_notes` · `street_highlights` · `chat_messages` · `peers` · `active_users` · `live_updates` · `welcome_notice` · `migrations`
 
 ---
 
 ## Frontend reference
 
-The frontend is a single-page vanilla-JS app. Key concepts:
-
-- **`API_BASE`** at the top of `app.js` switches between `localhost:8000` and the deployed Render URL based on hostname.
-- **Leaflet** powers the main map, the location-picker mini-map in the report modal, and the highlight-drawing mini-map in the admin modal. All three use **CARTO Voyager** tiles.
-- **PWA**: `manifest.json` declares `display: standalone`; `sw.js` precaches the app shell and uses a network-first strategy for `/api/*` so users always see fresh data when online but a usable shell when offline.
-- **Light / dark mode**: `styles.css` defines shared theme tokens (`--ui-text`, `--ui-glass`, etc.) with a light default and a dark palette under `@media (prefers-color-scheme: dark)`. The map’s floating UI (header, nav, live updates, legend, controls, popups) uses frosted glass in both modes. Map popups and dynamic HTML in `app.js` use CSS variables so text stays readable on dark or light backgrounds. There is no in-app theme toggle yet — the app follows the OS/browser setting.
-- **Collapsible header** on mobile hides the header when scrolling down to maximise map area; an exit-fullscreen button appears in map view.
-- **Loading overlay** appears only if the backend takes more than a second to respond (Render cold start), so warm boots feel instant.
-- **Welcome notice** shows on every page load (configurable to once-per-session in future).
-- **Image uploads** are compressed and resized client-side using `<canvas>` before base64-encoding, to keep payloads small.
+| Topic | Implementation |
+|-------|----------------|
+| API base | `API_BASE` in `app.js` — localhost vs `community-map.onrender.com` |
+| Clustering | `createMarkerClusterGroup()` — shared options, per-layer CSS class |
+| Layer toggles | `addNotesToggle()` — `showStreetNotes`, `showCityFountains`, `showCityToilets` |
+| List filtering | `getListFilterState()`, `LIST_UTILITY_NOTE_EMOJIS` for 💧/🚽 in aggregates |
+| Theme | CSS variables + `@media (prefers-color-scheme: dark)` |
+| Images | Canvas resize/compress before base64 upload |
+| Cold start | Loading overlay if backend > ~1s |
+| PWA | `manifest.json` + `sw.js` network-first for `/api` |
 
 ---
 
 ## Day-to-day workflow
 
 ```bash
-# Pull latest changes
 git pull origin main
-
-# Work in a feature branch (recommended even when solo)
 git checkout -b feat/your-feature
-
-# Edit, test locally, then:
+# edit, test locally
 git add .
 git commit -m "feat: short description"
-
-# Push the branch and open a PR on GitHub
 git push -u origin feat/your-feature
-
-# After review/merge to main, Netlify + Render auto-deploy in parallel.
+# merge to main → auto-deploy
 ```
-
-Useful one-liners:
-
-```bash
-# See what changed since last commit
-git diff
-
-# Undo the last commit but keep changes staged
-git reset --soft HEAD~1
-
-# Discard local changes to a file
-git restore frontend/app.js
-
-# View deploy logs (Render uses gh-flavoured event logs)
-# Netlify and Render both have rollback buttons in their dashboards.
-```
-
-See `LEARNING.md` for a deeper learning roadmap (git, GitHub, bash, project layout) that transfers to ML/PyTorch and robotics work too.
 
 ---
 
-## Next steps / roadmap
+## Roadmap
 
-### Short term (quality + polish)
+### Short term
 
-- **Tighten CORS** — change `CORS_ORIGINS` from `*` to the exact Netlify domain on Render.
-- **Cold-start mitigation** — add a free UptimeRobot ping every 10 minutes so the Render backend rarely sleeps.
-- **Service-worker versioning** — bump `CACHE_NAME` in `sw.js` on every deploy so users get fresh assets without manual unregister (already done in practice; keep the habit).
-- **Error reporting** — add Sentry (free tier) on both frontend and backend.
-- **Lighthouse pass** — audit PWA / accessibility / performance and fix the easy wins.
+- Tighten `CORS_ORIGINS` to the Netlify domain
+- UptimeRobot ping to reduce Render cold starts
+- Lighthouse / accessibility pass
+- Optional in-app theme toggle (system-only today)
 
-### Medium term (features)
+### Medium term
 
-- **Peer location sync via backend** — add a `/api/peers` endpoint so emoji avatar markers sync across different devices in real time (currently client-side only via `localStorage`).
-- **In-app theme toggle** — optional manual light/dark switch in the header (currently follows system `prefers-color-scheme` only).
-- **Push notifications** — Web Push for nearby high-urgency incidents (opt-in only).
-- **User accounts (optional)** — magic-link or OAuth login so contributors can edit their own posts.
-- **Better clustering** — use MongoDB geospatial indexes (`2dsphere`) instead of in-memory Haversine for incident clustering at scale.
-- **Multi-suburb support** — expand beyond Melbourne CBD with a suburb picker on first launch.
-- **Multilingual UI** — i18n scaffold for at least English + simplified Chinese + Vietnamese.
-- **Heatmap mode** — toggle between pin view and a density heatmap of recent reports.
-- **Verified moderators** — community moderation tier between admin and regular user.
+- Web Push for nearby high-urgency incidents (opt-in)
+- MongoDB `2dsphere` for server-side geo queries at scale
+- User accounts (magic link / OAuth) for editing own posts
+- Heatmap mode for incident density
 
-### Long term (platform)
+### Intentionally out of scope
 
-- **Migrate to a paid Render plan** so the backend never sleeps, then drop the loading overlay.
-- **Move long-term media to S3/R2** — currently images are base64-encoded; switch to object storage with signed URLs.
-- **Background jobs** — promote auto-purge logic from "lazy on next request" to a proper scheduled task (Render cron or a worker dyno).
-- **CI pipeline** — GitHub Actions workflow that runs pytest + a JS linter on every PR and blocks merge on failure.
-- **Native app shells** — wrap the PWA with Capacitor for proper iOS / Android store presence if user demand warrants it.
+- Likes / followers on street notes
+- Permanent “safe / unsafe” street ratings
+- AI sentiment on user content
+- Turn-by-turn navigation
 
-### Things explicitly **not** on the roadmap
-
-Per design decisions during development, the app intentionally avoids:
-
-- Likes / followers / comments / popularity / profiles on Street Notes.
-- Permanent labels or "safe / unsafe" ratings on streets.
-- AI sentiment analysis on user-submitted content.
-- Route recommendations or navigation features.
-
-The app is a **community awareness layer**, not a judgement engine. New features should preserve that posture.
+The app is a **community awareness layer**, not a judgement engine.
 
 ---
 
 ## License & attribution
 
-- **Map tiles:** © OpenStreetMap contributors, © CARTO
-- **Geocoding:** OpenStreetMap Nominatim — usage policy respected (low-volume, attributed)
-- **Code:** © project authors. Licence TBD.
+- **Map tiles:** © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, © [CARTO](https://carto.com/attributions)
+- **Geocoding:** OpenStreetMap Nominatim
+- **Drinking fountains & public toilets:** [City of Melbourne](https://data.melbourne.vic.gov.au/) open data (CC BY 4.0)
+- **Leaflet.markercluster:** MIT
+- **Application code:** © project authors. Licence TBD.

@@ -61,139 +61,87 @@
       </div>
     </div>
 
-    <header class="top-banner">
-      <div class="top-banner-content">
-        <span class="emergency-icon">🚨</span>
-        <span class="top-banner-text">
-          <strong>Emergency?</strong> Call <strong>000</strong> for immediate assistance
-        </span>
-      </div>
-    </header>
-
     <main class="app-shell">
-      <div id="collapsible-header">
-        <div class="collapsible-inner">
-          <section class="app-header">
-            <div class="header-left">
-              <div class="app-logo-box">
-                <div class="logo-icon">M</div>
-              </div>
-              <div class="header-text">
-                <h1 class="app-title">Community Map</h1>
-                <p class="app-subtitle">see it, post it, sort it</p>
-              </div>
-            </div>
-            <div class="header-right">
-              <button id="avatar-btn" class="avatar-btn" type="button" aria-label="Choose your avatar" title="Choose your avatar">🚫</button>
-            </div>
-          </section>
-
-          <section class="app-navigation">
-            <div class="nav-left">
-              <div class="view-toggle" role="tablist">
-                <button
-                  id="tab-map"
-                  class="toggle-button active"
-                  data-target="view-map"
-                  type="button"
-                >
-                  Map View
-                </button>
-                <button
-                  id="tab-list"
-                  class="toggle-button"
-                  data-target="view-list"
-                  type="button"
-                >
-                  List View
-                </button>
-              </div>
-              <div class="filter-dropdown-wrapper">
-                <select id="quick-filter" class="filter-dropdown">
-                  <option value="">All Reports</option>
-                  <option value="high">High Urgency Only</option>
-                  <option value="2">Last 2 Hours</option>
-                  <option value="4">Last 4 Hours</option>
-                </select>
-              </div>
-            </div>
-            <div class="nav-right action-buttons">
-              <button id="notes-button" class="notes-button" type="button">
-                Street Notes
-              </button>
-              <button id="report-button" class="report-button" type="button">
-                Report Incident
-              </button>
-            </div>
-          </section>
-
-          <section class="live-updates-banner">
-            <div class="updates-content">
-              <div class="updates-header">
-                <strong class="updates-title">Live Updates</strong>
-              </div>
-              <div class="updates-info">
-                <div class="updates-scroll-container">
-                  <span id="updates-text" class="updates-text">Loading...</span>
-                </div>
-              </div>
-            </div>
-            <div id="active-users-badge" class="active-users-badge" role="button" tabindex="0">
-              <span class="users-icon">👥</span>
-              <span id="active-users-text" class="active-users-text">0 people active on the map, tap to chat</span>
-            </div>
-          </section>
-        </div>
+      <!-- Hidden state holders (kept for legacy JS compatibility) -->
+      <div class="legacy-hidden" aria-hidden="true">
+        <span id="updates-text"></span>
+        <span id="active-users-text"></span>
+        <select id="list-time-filter"></select>
+        <select id="list-category-filter"></select>
+        <select id="list-urgency-filter"></select>
       </div>
 
       <section id="alert-banner" class="alert-banner hidden"></section>
 
+      <!-- MAP VIEW — hero -->
       <section id="view-map" class="view-container active">
         <div id="map"></div>
+
+        <!-- Floating top overlay: emergency pill + header card -->
+        <div class="map-overlay-top">
+          <div class="emergency-pill">
+            <span class="emergency-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12 2 1 21h22L12 2zm0 6c.6 0 1 .4 1 1v5a1 1 0 1 1-2 0V9c0-.6.4-1 1-1zm0 9.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z"/></svg>
+            </span>
+            <span class="emergency-text"><strong>Emergency?</strong> Call <strong>000</strong> for immediate assistance</span>
+          </div>
+
+          <div class="map-header-card">
+            <div class="mhc-logo">M</div>
+            <div class="mhc-text">
+              <span class="mhc-title">Community Map</span>
+              <span class="mhc-subtitle">See it. Post it, Sort it.</span>
+            </div>
+            <button id="avatar-btn" class="mhc-avatar" type="button" aria-label="Choose your avatar" title="Choose your avatar">🚫</button>
+          </div>
+
+          <!-- Separate "online" island — also opens chat -->
+          <div class="online-island-row">
+            <button id="online-pill" class="online-island" type="button" aria-label="Open community chat">
+              <span class="online-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M16 11a3 3 0 1 0-3-3 3 3 0 0 0 3 3zm-8 0a3 3 0 1 0-3-3 3 3 0 0 0 3 3zm0 2c-2.3 0-7 1.2-7 3.5V19h8v-2.5c0-.9.4-1.7 1-2.4A12 12 0 0 0 8 13zm8 0c-.3 0-.6 0-1 .1 1.3.9 2 2 2 3.4V19h6v-2.5c0-2.3-4.7-3.5-7-3.5z"/></svg>
+              </span>
+              <span id="online-count-text">0 online</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Floating bottom-left tools — independent glass pills -->
+        <div class="map-tool-stack">
+          <button id="list-toggle-btn" class="map-tool-btn" type="button">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            <span>List</span>
+          </button>
+          <button id="filter-btn" class="map-tool-btn" type="button">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span>Filter</span>
+          </button>
+          <button id="layers-btn" class="map-tool-btn" type="button">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+            <span>Layers</span>
+          </button>
+        </div>
+
+        <!-- Floating circular Locate control (kept clear of the tool stack) -->
+        <button id="locate-fab" class="locate-fab" type="button" aria-label="Go to my location">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><line x1="12" y1="2" x2="12" y2="5.5"/><line x1="12" y1="18.5" x2="12" y2="22"/><line x1="2" y1="12" x2="5.5" y2="12"/><line x1="18.5" y1="12" x2="22" y2="12"/></svg>
+        </button>
       </section>
 
+      <!-- LIST VIEW -->
       <section id="view-list" class="view-container">
-        <div class="list-filters">
-          <div class="filter-group">
-            <label for="list-time-filter">Time</label>
-            <select id="list-time-filter">
-              <option value="">Last 6 hours (All)</option>
-              <option value="2">Last 2 hours</option>
-              <option value="4">Last 4 hours</option>
-            </select>
+        <div class="list-top-bar">
+          <button id="list-back" class="list-back-btn" type="button" aria-label="Back to map">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="seg-toggle" role="tablist">
+            <button id="seg-map" class="seg-btn" type="button" role="tab">Map</button>
+            <button id="seg-list" class="seg-btn active" type="button" role="tab">List</button>
           </div>
-          <div class="filter-group">
-            <label for="list-category-filter">Category</label>
-            <select id="list-category-filter">
-              <option value="incidents">Incidents only</option>
-              <option value="all">All (Incidents + Notes)</option>
-              <optgroup label="Incident type">
-                <option value="protest">⚠️ Protest / Rally</option>
-                <option value="theft">💰 Theft / Robbery</option>
-                <option value="harassment">🚨 Harassment / Assault</option>
-                <option value="antisocial">😡 Anti-social Behaviour</option>
-                <option value="other">Other incident</option>
-              </optgroup>
-              <optgroup label="Street Notes">
-                <option value="note:all">All Street Notes</option>
-                <option value="note:💧">💧 Drinking Fountain</option>
-                <option value="note:🚽">🚽 Toilet</option>
-                <option value="note:☕">☕ Coffee</option>
-                <option value="note:🧋">🧋 Drink Deal</option>
-                <option value="note:🍜">🍜 Food</option>
-                <option value="note:🅿️">🅿️ Parking</option>
-                <option value="note:🎵">🎵 Music</option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="filter-group">
-            <label for="list-urgency-filter">Urgency</label>
-            <select id="list-urgency-filter">
-              <option value="">All</option>
-              <option value="high">High only</option>
-              <option value="medium-high">Medium + High</option>
-            </select>
-          </div>
+          <button id="list-filters-btn" class="list-filters-btn" type="button">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span>Filters</span>
+          </button>
         </div>
         <div id="incident-list" class="incident-list"></div>
       </section>
@@ -205,183 +153,295 @@
       </footer>
     </main>
 
-    <!-- Report Modal -->
-    <div id="report-modal" class="modal hidden" aria-hidden="true">
-      <div class="modal-backdrop"></div>
-      <div class="modal-content report-modal-content">
-        <header class="modal-header report-modal-header">
-          <div>
-            <h2>🚨 Report Incident</h2>
-            <p class="modal-subtitle">Help your community stay informed — your report is anonymous to other users.</p>
-          </div>
-          <button id="report-close" class="icon-button" type="button" aria-label="Close">
-            &times;
-          </button>
-        </header>
-        <div class="modal-body">
-          <section class="form-section">
-            <h3>Location</h3>
-            <p class="form-help">
-              Use your GPS, search for a street, or drag the pin on the small
-              map to the exact spot.
-            </p>
-            <div class="location-controls">
-              <button id="use-location" class="ghost-button" type="button">
-                Use my current location
-              </button>
-              <div class="field">
-                <label for="address-input">Search by street or address</label>
-                <input
-                  id="address-input"
-                  type="text"
-                  placeholder="e.g. Swanston St & Lonsdale St"
-                />
-                <button
-                  id="address-search-button"
-                  class="secondary-button"
-                  type="button"
-                >
-                  Find
-                </button>
-              </div>
-            </div>
-            <div id="location-map" class="location-map"></div>
-          </section>
-
-          <section class="form-section">
-            <h3>Incident details</h3>
-            <div class="field">
-              <label>Category</label>
-              <div class="chip-row" id="category-chips">
-                <button
-                  type="button"
-                  class="chip"
-                  data-value="protest"
-                  data-label="⚠️ Protest / Rally"
-                >
-                  ⚠️ Protest / Rally
-                </button>
-                <button
-                  type="button"
-                  class="chip"
-                  data-value="theft"
-                  data-label="💰 Theft / Robbery"
-                >
-                  💰 Theft / Robbery
-                </button>
-                <button
-                  type="button"
-                  class="chip"
-                  data-value="harassment"
-                  data-label="🚨 Harassment / Assault / Threats"
-                >
-                  🚨 Harassment / Assault / Threats
-                </button>
-                <button
-                  type="button"
-                  class="chip"
-                  data-value="antisocial"
-                  data-label="😡 Anti-social Behaviour"
-                >
-                  😡 Anti-social Behaviour
-                </button>
-                <button
-                  type="button"
-                  class="chip"
-                  data-value="other"
-                  data-label="Other"
-                >
-                  Other
-                </button>
-              </div>
-            </div>
-
-            <div class="field">
-              <label>Urgency</label>
-              <div class="chip-row" id="urgency-chips">
-                <button type="button" class="chip" data-value="low">
-                  Low
-                </button>
-                <button type="button" class="chip" data-value="medium">
-                  Medium
-                </button>
-                <button type="button" class="chip" data-value="high">
-                  High
-                </button>
-              </div>
-            </div>
-
-            <div class="field">
-              <label for="description-input">Description <span class="form-optional">(optional)</span></label>
-              <textarea
-                id="description-input"
-                rows="3"
-                maxlength="500"
-                placeholder="Add any useful context — time, direction, group size, etc. Leave blank if you'd rather not."
-              ></textarea>
-            </div>
-          </section>
-
-          <section class="form-section">
-            <h3>Identity & credibility</h3>
-            <p class="form-help">
-              Sharing contact details helps admins verify your report. They will
-              never be shown publicly.
-            </p>
-            <div class="field">
-              <label>How should we treat this report?</label>
-              <div class="radio-row">
-                <label class="radio-option">
-                  <input
-                    type="radio"
-                    name="identity-mode"
-                    value="verified"
-                    checked
-                  />
-                  <span>Verified – contact visible only to admins</span>
-                </label>
-                <label class="radio-option">
-                  <input type="radio" name="identity-mode" value="anonymous" />
-                  <span>Anonymous – marked as unverified</span>
-                </label>
-              </div>
-            </div>
-            <div id="contact-fields" class="contact-fields">
-              <div class="field">
-                <label for="contact-email">Email (optional)</label>
-                <input
-                  id="contact-email"
-                  type="email"
-                  placeholder="you@example.com"
-                />
-              </div>
-              <div class="field">
-                <label for="contact-phone">Phone (optional)</label>
-                <input
-                  id="contact-phone"
-                  type="tel"
-                  placeholder="+61 ..."
-                />
-              </div>
-            </div>
-            <div class="field checkbox-field">
-              <label>
-                <input type="checkbox" id="agreement-checkbox" />
-                <span>
-                  I understand this app does not replace calling 000 in an
-                  emergency and that I use it at my own risk, except where harm
-                  is caused by a fault in the app. Any contact I share is
-                  visible only to admins.
-                </span>
-              </label>
-            </div>
-          </section>
+    <!-- Filter Bottom Sheet -->
+    <div id="filter-sheet-overlay" class="sheet-overlay hidden" aria-hidden="true">
+      <div class="sheet-backdrop" id="filter-sheet-backdrop"></div>
+      <div class="bottom-sheet filter-sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title-row">
+          <h2 class="sheet-title">Filters</h2>
+          <button id="filter-reset" class="sheet-reset" type="button">Reset</button>
         </div>
-        <footer class="modal-footer">
-          <button id="submit-report" class="primary-button" type="button">
-            Submit report
+
+        <div class="filter-block">
+          <span class="filter-block-label">Time</span>
+          <div class="pill-row" id="filter-time">
+            <button type="button" class="filter-pill" data-value="1">1 Hour</button>
+            <button type="button" class="filter-pill active" data-value="6">6 Hours</button>
+            <button type="button" class="filter-pill" data-value="24">24 Hours</button>
+            <button type="button" class="filter-pill" data-value="all">All Time</button>
+          </div>
+        </div>
+
+        <div class="filter-block">
+          <span class="filter-block-label">Category</span>
+          <div class="pill-row" id="filter-category">
+            <button type="button" class="filter-pill active" data-value="all">All</button>
+            <button type="button" class="filter-pill" data-value="theft">Theft</button>
+            <button type="button" class="filter-pill" data-value="harassment">Harassment</button>
+            <button type="button" class="filter-pill" data-value="protest">Protest</button>
+            <button type="button" class="filter-pill" data-value="antisocial">Anti-social</button>
+            <button type="button" class="filter-pill" data-value="other">Other</button>
+          </div>
+        </div>
+
+        <div class="filter-block">
+          <span class="filter-block-label">Urgency</span>
+          <div class="pill-row" id="filter-urgency">
+            <button type="button" class="filter-pill active" data-value="all">All</button>
+            <button type="button" class="filter-pill" data-value="high"><span class="u-dot u-high"></span>High</button>
+            <button type="button" class="filter-pill" data-value="medium"><span class="u-dot u-medium"></span>Medium</button>
+            <button type="button" class="filter-pill" data-value="low"><span class="u-dot u-low"></span>Low</button>
+          </div>
+        </div>
+
+        <button id="filter-apply" class="sheet-primary-btn" type="button">Apply Filters</button>
+      </div>
+    </div>
+
+    <!-- Layers Bottom Sheet -->
+    <div id="layers-sheet-overlay" class="sheet-overlay hidden" aria-hidden="true">
+      <div class="sheet-backdrop" id="layers-sheet-backdrop"></div>
+      <div class="bottom-sheet layers-sheet">
+        <div class="sheet-handle"></div>
+        <h2 class="sheet-title">Map Layers</h2>
+
+        <button type="button" class="layer-row" data-layer="reports">
+          <span class="layer-icon layer-icon-red">🚨</span>
+          <span class="layer-text">
+            <span class="layer-name">Reports</span>
+            <span class="layer-desc">Incidents and events</span>
+          </span>
+          <span class="layer-switch active" id="layer-reports" role="switch" aria-checked="true"><span class="switch-knob"></span></span>
+        </button>
+
+        <button type="button" class="layer-row" data-layer="discoveries">
+          <span class="layer-icon layer-icon-blue">📝</span>
+          <span class="layer-text">
+            <span class="layer-name">Discoveries</span>
+            <span class="layer-desc">Community notes</span>
+          </span>
+          <span class="layer-switch active" id="layer-discoveries" role="switch" aria-checked="true"><span class="switch-knob"></span></span>
+        </button>
+
+        <button type="button" class="layer-row" data-layer="highlights">
+          <span class="layer-icon layer-icon-amber">⚡</span>
+          <span class="layer-text">
+            <span class="layer-name">Highlights</span>
+            <span class="layer-desc">Traffic and activity</span>
+          </span>
+          <span class="layer-switch active" id="layer-highlights" role="switch" aria-checked="true"><span class="switch-knob"></span></span>
+        </button>
+
+        <button type="button" class="layer-row" data-layer="facilities">
+          <span class="layer-icon layer-icon-green">🚻</span>
+          <span class="layer-text">
+            <span class="layer-name">Public Facilities</span>
+            <span class="layer-desc">Toilets, fountains, shelters</span>
+          </span>
+          <span class="layer-switch" id="layer-facilities" role="switch" aria-checked="false"><span class="switch-knob"></span></span>
+        </button>
+
+        <button id="layers-done" class="sheet-primary-btn" type="button">Done</button>
+      </div>
+    </div>
+
+    <!-- FAB Button -->
+    <button id="fab-button" class="fab-button" type="button" aria-label="Add incident or discovery">
+      <span class="fab-plus" aria-hidden="true">+</span>
+    </button>
+
+    <!-- Action Sheet -->
+    <div id="action-sheet-overlay" class="action-sheet-overlay hidden" aria-hidden="true">
+      <div class="action-sheet-backdrop" id="action-sheet-backdrop"></div>
+      <div class="action-sheet">
+        <button type="button" class="action-item" id="action-report-btn">
+          <span class="action-icon action-icon-red">🚨</span>
+          <div class="action-text">
+            <span class="action-title">Report Incident</span>
+            <span class="action-desc">Share something happening now</span>
+          </div>
+          <span class="action-arrow" aria-hidden="true">›</span>
+        </button>
+        <div class="action-divider"></div>
+        <button type="button" class="action-item" id="action-discovery-btn">
+          <span class="action-icon action-icon-blue">📝</span>
+          <div class="action-text">
+            <span class="action-title">Share Discovery</span>
+            <span class="action-desc">Add local notes or observations</span>
+          </div>
+          <span class="action-arrow" aria-hidden="true">›</span>
+        </button>
+        <div class="action-divider"></div>
+        <button type="button" class="action-item" id="action-emergency-btn">
+          <span class="action-icon action-icon-green">📞</span>
+          <div class="action-text">
+            <span class="action-title">Emergency Contact</span>
+            <span class="action-desc">Quick access to important numbers</span>
+          </div>
+          <span class="action-arrow" aria-hidden="true">›</span>
+        </button>
+        <button type="button" class="action-cancel" id="action-sheet-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Report Incident Modal — 5-Step Wizard -->
+    <div id="report-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" id="report-modal-backdrop"></div>
+      <div class="wizard-sheet">
+
+        <div class="wizard-header">
+          <button id="report-back-btn" class="wizard-back-btn" type="button" aria-label="Back" style="visibility:hidden">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
           </button>
-        </footer>
+          <div class="wizard-step-dots" id="report-step-dots">
+            <span class="wdot active"></span><span class="wdot"></span><span class="wdot"></span><span class="wdot"></span><span class="wdot"></span>
+          </div>
+          <button id="report-close" class="wizard-close-btn" type="button" aria-label="Close">&#215;</button>
+        </div>
+
+        <!-- Step 1 — What happened? -->
+        <div class="wizard-body" id="report-step-1">
+          <div class="wizard-title-block">
+            <h2 class="wizard-title">What happened?</h2>
+            <p class="wizard-subtitle">Choose the best category.</p>
+          </div>
+          <div class="cat-grid" id="report-category-grid">
+            <button type="button" class="cat-card" data-value="protest">
+              <span class="cat-emoji">⚠️</span>
+              <span class="cat-label">Protest / Rally</span>
+            </button>
+            <button type="button" class="cat-card" data-value="theft">
+              <span class="cat-emoji">💰</span>
+              <span class="cat-label">Theft / Robbery</span>
+            </button>
+            <button type="button" class="cat-card" data-value="harassment">
+              <span class="cat-emoji">🚨</span>
+              <span class="cat-label">Harassment</span>
+            </button>
+            <button type="button" class="cat-card" data-value="antisocial">
+              <span class="cat-emoji">😡</span>
+              <span class="cat-label">Anti-social</span>
+            </button>
+            <button type="button" class="cat-card cat-card-wide" data-value="other">
+              <span class="cat-emoji">❓</span>
+              <span class="cat-label">Other</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 2 — Where? -->
+        <div class="wizard-body" id="report-step-2" style="display:none">
+          <div class="wizard-title-block">
+            <h2 class="wizard-title">Where did it happen?</h2>
+            <p class="wizard-subtitle">Set the location.</p>
+          </div>
+          <div class="loc-option-btns">
+            <button type="button" class="loc-option-btn" id="use-location">
+              <span>📍</span> Use current location
+            </button>
+            <button type="button" class="loc-option-btn" id="report-addr-toggle">
+              <span>🔍</span> Search address
+            </button>
+          </div>
+          <div id="report-addr-row" class="loc-search-row" style="display:none">
+            <input id="address-input" type="text" class="wizard-input" placeholder="e.g. Swanston St &amp; Lonsdale St" />
+            <button id="address-search-button" class="loc-search-go" type="button">Go</button>
+          </div>
+          <div id="location-map" class="wizard-map"></div>
+          <p class="wizard-map-hint">Tap the map or drag the pin to adjust.</p>
+          <button type="button" class="wizard-next-btn" id="report-step2-next">Continue <span aria-hidden="true">›</span></button>
+        </div>
+
+        <!-- Step 3 — Add Details -->
+        <div class="wizard-body" id="report-step-3" style="display:none">
+          <div class="wizard-title-block">
+            <h2 class="wizard-title">Add details</h2>
+            <p class="wizard-subtitle">Any extra info helps.</p>
+          </div>
+          <div class="wizard-field">
+            <label class="wizard-label">Description <span class="opt-badge">optional</span></label>
+            <textarea id="description-input" class="wizard-textarea" rows="3" maxlength="500" placeholder="What happened? Add any useful details..."></textarea>
+            <div class="char-count"><span id="desc-char-count">0</span>/500</div>
+          </div>
+          <div class="wizard-field">
+            <label class="wizard-label">Add a photo <span class="opt-badge">optional</span></label>
+            <div class="photo-zone" id="report-photo-zone">
+              <input type="file" id="report-photo-input" accept="image/*" class="photo-file-input" />
+              <div class="photo-placeholder" id="report-photo-placeholder">
+                <span class="photo-icon">📷</span>
+                <span>Tap to add photo</span>
+              </div>
+              <img id="report-photo-preview" class="photo-preview" style="display:none" alt="Preview" />
+              <button type="button" class="photo-remove-btn" id="report-photo-remove" style="display:none">&#215; Remove</button>
+            </div>
+          </div>
+          <div class="wizard-field">
+            <label class="wizard-label">Urgency</label>
+            <div class="urgency-row" id="urgency-selector">
+              <button type="button" class="urg-btn" data-value="low"><span class="urg-dot urg-low"></span>Low</button>
+              <button type="button" class="urg-btn active" data-value="medium"><span class="urg-dot urg-medium"></span>Medium</button>
+              <button type="button" class="urg-btn" data-value="high"><span class="urg-dot urg-high"></span>High</button>
+            </div>
+          </div>
+          <button type="button" class="wizard-next-btn" id="report-step3-next">Continue <span aria-hidden="true">›</span></button>
+        </div>
+
+        <!-- Step 4 — Verification -->
+        <div class="wizard-body" id="report-step-4" style="display:none">
+          <div class="wizard-title-block">
+            <h2 class="wizard-title">How should we treat this report?</h2>
+            <p class="wizard-subtitle">Helps admins verify and respond.</p>
+          </div>
+          <div class="verify-options">
+            <button type="button" class="verify-btn active" data-value="anonymous" id="verify-anon-btn">
+              <div class="verify-btn-inner">
+                <span class="verify-btn-icon">🔒</span>
+                <div>
+                  <div class="verify-btn-title">Anonymous</div>
+                  <div class="verify-btn-desc">Your report is private and marked as unverified.</div>
+                </div>
+              </div>
+              <span class="verify-check" id="verify-anon-check" aria-hidden="true">&#10003;</span>
+            </button>
+            <button type="button" class="verify-btn" data-value="verified" id="verify-verified-btn">
+              <div class="verify-btn-inner">
+                <span class="verify-btn-icon">&#9989;</span>
+                <div>
+                  <div class="verify-btn-title">Verified</div>
+                  <div class="verify-btn-desc">Share contact details (visible to admins only).</div>
+                </div>
+              </div>
+              <span class="verify-check verify-check-hidden" id="verify-verified-check" aria-hidden="true">&#10003;</span>
+            </button>
+          </div>
+          <div id="contact-fields" style="display:none; margin-top:1rem">
+            <div class="wizard-field">
+              <label class="wizard-label">Email <span class="opt-badge">optional</span></label>
+              <input id="contact-email" type="email" class="wizard-input" placeholder="you@example.com" />
+            </div>
+            <div class="wizard-field">
+              <label class="wizard-label">Phone <span class="opt-badge">optional</span></label>
+              <input id="contact-phone" type="tel" class="wizard-input" placeholder="+61 ..." />
+            </div>
+          </div>
+          <button type="button" class="wizard-next-btn" id="report-step4-next">Continue <span aria-hidden="true">›</span></button>
+        </div>
+
+        <!-- Step 5 — Review & Submit -->
+        <div class="wizard-body" id="report-step-5" style="display:none">
+          <div class="wizard-title-block">
+            <h2 class="wizard-title">Review your report</h2>
+            <p class="wizard-subtitle">Check and submit.</p>
+          </div>
+          <div class="review-card" id="report-review-card"></div>
+          <label class="agreement-row">
+            <input type="checkbox" id="agreement-checkbox" />
+            <span>I understand this app does not replace calling <strong>000</strong> in an emergency and I use it at my own risk.</span>
+          </label>
+          <button id="submit-report" class="wizard-submit-btn wizard-submit-danger" type="button">Submit Report</button>
+        </div>
+
       </div>
     </div>
 
@@ -444,15 +504,15 @@
       </div>
     </div>
 
-    <!-- Detail Modal -->
+    <!-- Detail Modal — Apple Maps Style Card -->
     <div id="detail-modal" class="modal hidden" aria-hidden="true">
       <div class="modal-backdrop"></div>
-      <div class="modal-content report-modal-content">
-        <header class="modal-header report-modal-header">
-          <h2 id="detail-title"></h2>
-          <button id="detail-close" class="icon-button" type="button" aria-label="Close">&times;</button>
-        </header>
-        <div class="modal-body" id="detail-body"></div>
+      <div class="detail-sheet">
+        <div class="detail-sheet-handle"></div>
+        <div class="detail-sheet-close-row">
+          <button id="detail-close" class="wizard-close-btn" type="button" aria-label="Close">&#215;</button>
+        </div>
+        <div id="detail-body"></div>
       </div>
     </div>
 
@@ -466,41 +526,95 @@
       crossorigin=""
     ></script>
 
-    <!-- Street Note Modal (Bottom Sheet) -->
+    <!-- Community Discovery Modal — 4-Step Wizard -->
     <div id="street-note-modal" class="street-note-overlay hidden" aria-hidden="true">
-      <div class="street-note-sheet">
-        <div class="street-note-header">
-          <div>
-            <h2 class="street-note-title">📝 Street Note</h2>
-            <p class="street-note-subtitle">Drop a quick tip to help friends get around the city.</p>
+      <div class="wizard-sheet">
+
+        <div class="wizard-header">
+          <button id="discovery-back-btn" class="wizard-back-btn" type="button" aria-label="Back" style="visibility:hidden">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <div class="wizard-step-dots" id="discovery-step-dots">
+            <span class="wdot active"></span><span class="wdot"></span><span class="wdot"></span><span class="wdot"></span>
           </div>
-          <button class="street-note-close" id="street-note-close" type="button" aria-label="Close">&times;</button>
+          <button class="wizard-close-btn" id="street-note-close" type="button" aria-label="Close">&#215;</button>
         </div>
-        <div class="street-note-body">
-          <div class="street-note-field">
-            <label class="street-note-label">📍 Location</label>
-            <button type="button" id="street-note-use-location" class="street-note-location-btn">
-              Use my current GPS location
+
+        <!-- Step 1 — What to share? -->
+        <div class="wizard-body" id="discovery-step-1">
+          <div class="wizard-title-block">
+            <h2 class="wizard-title">Share a discovery</h2>
+            <p class="wizard-subtitle">Choose the type of place or thing you want to share.</p>
+          </div>
+          <div class="cat-grid" id="discovery-category-grid">
+            <button type="button" class="cat-card" data-value="💧" data-label="Drinking Fountain">
+              <span class="cat-emoji">💧</span>
+              <span class="cat-label">Fountain</span>
             </button>
-            <input
-              id="street-note-location"
-              class="street-note-location-display"
-              type="text"
-              placeholder="e.g. 151-211C Wellington Road"
-              value=""
-            />
+            <button type="button" class="cat-card" data-value="☕" data-label="Coffee Deal">
+              <span class="cat-emoji">☕</span>
+              <span class="cat-label">Coffee Deal</span>
+            </button>
+            <button type="button" class="cat-card" data-value="🧋" data-label="Bubble Tea">
+              <span class="cat-emoji">🧋</span>
+              <span class="cat-label">Bubble Tea</span>
+            </button>
+            <button type="button" class="cat-card" data-value="🍩" data-label="Dessert Deal">
+              <span class="cat-emoji">🍩</span>
+              <span class="cat-label">Dessert Deal</span>
+            </button>
+            <button type="button" class="cat-card" data-value="🚻" data-label="Public Toilet">
+              <span class="cat-emoji">🚻</span>
+              <span class="cat-label">Toilet</span>
+            </button>
+            <button type="button" class="cat-card" data-value="🔌" data-label="Charging Point">
+              <span class="cat-emoji">🔌</span>
+              <span class="cat-label">Charging Point</span>
+            </button>
+            <button type="button" class="cat-card" data-value="🚧" data-label="Construction">
+              <span class="cat-emoji">🚧</span>
+              <span class="cat-label">Construction</span>
+            </button>
+            <button type="button" class="cat-card" data-value="🎵" data-label="Busker">
+              <span class="cat-emoji">🎵</span>
+              <span class="cat-label">Busker</span>
+            </button>
+            <button type="button" class="cat-card cat-card-wide" data-value="📍" data-label="Other">
+              <span class="cat-emoji">📍</span>
+              <span class="cat-label">Other</span>
+            </button>
           </div>
-          <div class="street-note-field">
-            <label class="street-note-label">✏️ What's happening?</label>
-            <textarea id="street-note-text" class="street-note-textarea" placeholder="City whispers" maxlength="150" rows="3"></textarea>
-            <div class="street-note-char-count"><span id="street-note-count">0</span>/150</div>
+        </div>
+
+        <!-- Step 2 — Discovery Details -->
+        <div class="wizard-body" id="discovery-step-2" style="display:none">
+          <div class="wizard-title-block">
+            <h2 class="wizard-title" id="discovery-step2-title">Discovery Details</h2>
+            <p class="wizard-subtitle">Add a quick photo and details. Keep it effortless.</p>
           </div>
-          <div class="street-note-field">
-            <label class="street-note-label">⚡ Quick shortcuts <span class="street-note-hint">(optional — pick one to autofill)</span></label>
-            <div id="emoji-shortcut-bar" class="emoji-shortcut-bar"></div>
+          <div class="photo-zone" id="discovery-photo-zone">
+            <input type="file" id="street-note-image" accept="image/*" class="photo-file-input" />
+            <div class="photo-placeholder" id="discovery-photo-placeholder">
+              <span class="photo-icon">📷</span>
+              <span>Tap to add photo</span>
+            </div>
+            <img id="discovery-photo-preview" class="photo-preview" style="display:none" alt="Preview" />
+            <button type="button" class="photo-remove-btn" id="discovery-photo-remove" style="display:none">&#215; Remove</button>
           </div>
-          <div class="street-note-field">
-            <label class="street-note-label">⏳ How long should this last?</label>
+          <div class="wizard-field" id="discovery-question-field" style="display:none">
+            <label class="wizard-label" id="discovery-question-label">Question</label>
+            <div class="binary-selector">
+              <button type="button" class="binary-btn" data-value="yes" id="disc-yes-btn">Yes, it is</button>
+              <button type="button" class="binary-btn" data-value="no" id="disc-no-btn">No, it isn't</button>
+            </div>
+          </div>
+          <div class="wizard-field">
+            <label class="wizard-label">Add a note <span class="opt-badge">optional</span></label>
+            <textarea id="street-note-text" class="wizard-textarea" placeholder="e.g. Clean and good water pressure." maxlength="150" rows="3"></textarea>
+            <div class="char-count"><span id="street-note-count">0</span>/150</div>
+          </div>
+          <div class="wizard-field">
+            <label class="wizard-label">⏳ How long should this last?</label>
             <div class="duration-player">
               <div class="duration-slider-wrap">
                 <div class="duration-bubble" id="duration-bubble">12 hours</div>
@@ -513,22 +627,49 @@
             </div>
             <label class="forever-toggle">
               <div class="forever-toggle-info">
-                <div class="forever-toggle-text">Keep forever</div>
+                <div class="forever-toggle-text">♾️ Keep forever</div>
                 <div class="forever-hint">Only an admin can remove it</div>
               </div>
               <input type="checkbox" id="street-note-forever" class="forever-toggle-input" />
               <span class="forever-toggle-switch" aria-hidden="true"></span>
             </label>
           </div>
-          <div class="street-note-field">
-            <label class="street-note-label">📷 Optional image</label>
-            <input id="street-note-image" class="street-note-image-input" type="file" accept="image/*" />
-            <div id="street-note-image-meta" class="street-note-image-meta">No image selected</div>
-          </div>
-          <button type="button" class="street-note-submit" id="street-note-submit" disabled>
-            Post Note
-          </button>
+          <button type="button" class="wizard-next-btn" id="discovery-step2-next">Continue <span aria-hidden="true">›</span></button>
         </div>
+
+        <!-- Step 3 — Location -->
+        <div class="wizard-body" id="discovery-step-3" style="display:none">
+          <div class="wizard-title-block">
+            <h2 class="wizard-title">Location</h2>
+            <p class="wizard-subtitle">Confirm the location on the map.</p>
+          </div>
+          <div class="loc-option-btns">
+            <button type="button" class="loc-option-btn" id="street-note-use-location">
+              <span>📍</span> Use current location
+            </button>
+            <button type="button" class="loc-option-btn" id="discovery-addr-toggle">
+              <span>🔍</span> Search address
+            </button>
+          </div>
+          <div id="discovery-addr-row" class="loc-search-row" style="display:none">
+            <input id="street-note-location" type="text" class="wizard-input" placeholder="e.g. College Walk, Melbourne" />
+            <button id="discovery-search-go" class="loc-search-go" type="button">Go</button>
+          </div>
+          <div id="discovery-location-map" class="wizard-map"></div>
+          <p class="wizard-map-hint">Or move the pin on the map.</p>
+          <button type="button" class="wizard-next-btn" id="discovery-step3-next">Continue <span aria-hidden="true">›</span></button>
+        </div>
+
+        <!-- Step 4 — Review & Post -->
+        <div class="wizard-body" id="discovery-step-4" style="display:none">
+          <div class="wizard-title-block">
+            <h2 class="wizard-title">Review &amp; Post</h2>
+            <p class="wizard-subtitle">Your discovery is ready to share.</p>
+          </div>
+          <div class="review-card" id="discovery-review-card"></div>
+          <button id="street-note-submit" class="wizard-submit-btn wizard-submit-primary" type="button">Post Discovery</button>
+        </div>
+
       </div>
     </div>
 
@@ -617,6 +758,48 @@
           <button id="chat-send-button" class="chat-send-button" type="button">
             Send
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Emergency Contact Modal -->
+    <div id="emergency-contact-modal" class="modal-overlay hidden" aria-hidden="true">
+      <div class="emergency-sheet">
+        <header class="avatar-sheet-header">
+          <h2 id="emergency-title">Emergency contact</h2>
+          <button id="emergency-close" class="icon-button" type="button" aria-label="Close">&times;</button>
+        </header>
+
+        <a class="emergency-000-btn" href="tel:000">
+          <span class="emergency-000-icon" aria-hidden="true">🚨</span>
+          <span class="emergency-000-text"><strong>Call 000</strong><small>Police · Fire · Ambulance</small></span>
+        </a>
+
+        <!-- First-run setup -->
+        <div id="emergency-setup">
+          <p class="avatar-sheet-hint">Save a personal emergency contact (a friend or family member). Next time you tap Emergency Contact it will dial them straight away.</p>
+          <div class="field">
+            <label for="emergency-name">Name</label>
+            <input id="emergency-name" type="text" maxlength="40" placeholder="e.g. Mum, Alex" autocomplete="name" />
+          </div>
+          <div class="field">
+            <label for="emergency-number">Phone number</label>
+            <input id="emergency-number" type="tel" maxlength="25" placeholder="e.g. 0412 345 678" autocomplete="tel" inputmode="tel" />
+          </div>
+          <button id="emergency-save" class="primary-button" type="button" style="width:100%;margin-top:0.75rem;">Save contact</button>
+        </div>
+
+        <!-- Saved view -->
+        <div id="emergency-saved" style="display:none;">
+          <div class="emergency-saved-card">
+            <span class="emergency-saved-emoji" aria-hidden="true">👤</span>
+            <div class="emergency-saved-info">
+              <span class="emergency-saved-name" id="emergency-saved-name"></span>
+              <span class="emergency-saved-number" id="emergency-saved-number"></span>
+            </div>
+          </div>
+          <a id="emergency-call-btn" class="primary-button emergency-call-btn" href="tel:000">📞 Call now</a>
+          <button id="emergency-edit-btn" class="ghost-button" type="button" style="width:100%;margin-top:0.6rem;">Edit contact</button>
         </div>
       </div>
     </div>
