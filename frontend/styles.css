@@ -6788,6 +6788,11 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
   width: 100%;
 }
 .note-resolve-btn:disabled { opacity: 0.6; cursor: default; }
+.note-resolve-btn.note-resolve-reopen {
+  background: rgba(120, 120, 128, 0.16);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+}
 
 /* Found ring + tick on map pins */
 .map-pin.is-found { --pin-accent: #22c55e; }

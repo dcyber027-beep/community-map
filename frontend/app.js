@@ -213,8 +213,17 @@ let discoveryWizardData = {
   contactPhone: '',
   contactEmail: ''
 };
-// Helping Hand categories whose "Found" status can be toggled by the owner
-const HELPING_RESOLVABLE = new Set(["🐾", "👩‍👦"]);
+// Lost categories use "found" wording; all other Helping Hand categories use
+// "no longer needed". The owner can toggle the resolved state on ANY type.
+const HELPING_LOST = new Set(["🐾", "👩‍👦"]);
+function helpingResolveLabels(emoji) {
+  const lost = HELPING_LOST.has(emoji);
+  return {
+    badge: lost ? "Found ✓" : "No longer needed ✓",
+    resolve: lost ? "✅ Mark as found" : "✅ Mark as no longer needed",
+    reopen: lost ? "↩︎ Mark as not found" : "↩︎ Mark as still needed",
+  };
+}
 let discoveryLocationMap = null;
 let discoveryLocationMarker = null;
 
@@ -639,7 +648,6 @@ function renderList() {
 
   // ── Discovery / Street Note rows ───────────────────────────────────────
   noteItems.forEach((note) => {
-    const isForeverNote = note.forever || !note.expires_at;
     const timeText = note.isCityReference
       ? `Official · ${note.source || "City of Melbourne"}`
       : humanTimeAgo(note.created_at);
@@ -674,16 +682,23 @@ function renderList() {
         map.setView([note.latitude, note.longitude], 17);
         setTimeout(() => {
           map.invalidateSize();
-          const imageHtml = note.image_url
-            ? `<div style="margin-bottom:0.5rem"><img src="${note.image_url}" alt="Discovery photo" style="display:block;width:100%;max-width:220px;max-height:150px;object-fit:cover;border-radius:6px" /></div>` : "";
-          const expText = isForeverNote ? "Permanent" : formatRemainingTime(note.expires_at);
-          const metaHtml = note.isCityReference
-            ? `<div style="font-size:0.75rem;color:var(--ui-muted)">Official · ${note.source || "City of Melbourne"}</div>`
-            : `<div style="font-size:0.75rem;color:var(--ui-muted)">${humanTimeAgo(note.created_at)} · ${expText}</div>`;
-          L.popup()
-            .setLatLng([note.latitude, note.longitude])
-            .setContent(`<div style="max-width:240px;padding:0.25rem">${imageHtml}<div style="font-size:0.9375rem;line-height:1.5;margin-bottom:0.5rem">${note.text}</div>${metaHtml}</div>`)
-            .openOn(map);
+          if (note.isCityReference) {
+            const imageHtml = note.image_url
+              ? `<div style="margin-bottom:0.5rem"><img src="${note.image_url}" alt="Discovery photo" style="display:block;width:100%;max-width:220px;max-height:150px;object-fit:cover;border-radius:6px" /></div>` : "";
+            const metaHtml = `<div style="font-size:0.75rem;color:var(--ui-muted)">Official · ${note.source || "City of Melbourne"}</div>`;
+            L.popup()
+              .setLatLng([note.latitude, note.longitude])
+              .setContent(`<div style="max-width:240px;padding:0.25rem">${imageHtml}<div style="font-size:0.9375rem;line-height:1.5;margin-bottom:0.5rem">${note.text}</div>${metaHtml}</div>`)
+              .openOn(map);
+          } else {
+            // Real discovery / Helping Hand note — use the rich popup so the
+            // contact, found badge and owner "Mark as found" button are present.
+            const popup = L.popup()
+              .setLatLng([note.latitude, note.longitude])
+              .setContent(buildStreetNotePopupHtml(note));
+            popup.openOn(map);
+            attachStreetNotePopupHandlers(popup.getElement(), note);
+          }
         }, 300);
       }
     });
@@ -2916,6 +2931,115 @@ function renderCityPublicToilets() {
   });
 }
 
+// Build the full popup HTML for a street note / helping-hand post.
+// Shared by the map markers and the list-view navigation so the
+// "Mark as found" / contact / found-badge UI is always available.
+function buildStreetNotePopupHtml(note) {
+  const isHelping = note.kind === "helping_hand";
+  const isResolved = isHelping && !!note.resolved;
+  const timeAgo = humanTimeAgo(note.created_at);
+  const isForever = note.forever || !note.expires_at;
+  const expiryText = isForever ? "Permanent" : formatRemainingTime(note.expires_at);
+  const permBadge = isForever ? '<span class="note-permanent-badge">PERMANENT</span>' : '';
+  const imageHtml = note.image_url
+    ? `<div style="margin-bottom: 0.5rem;"><img src="${note.image_url}" alt="Street note image" style="display:block; width:100%; max-width:200px; max-height:140px; object-fit:cover; border-radius: 6px; border: 1px solid var(--ui-border);" /></div>`
+    : "";
+  const locationHtml = note.location_text
+    ? `<div style="font-size: 0.75rem; color: var(--ui-muted); margin-bottom: 0.5rem;">📍 ${note.location_text}</div>`
+    : "";
+  const adminDeleteHtml = (isAdminLoggedIn && !note.isCityReference)
+    ? `<div style="margin-top: 0.5rem;"><button type="button" class="note-admin-delete" data-note-id="${note.id}">🗑️ Delete note</button></div>`
+    : "";
+
+  let helpingHeaderHtml = "";
+  let contactHtml = "";
+  let foundBadgeHtml = "";
+  let resolveBtnHtml = "";
+  if (isHelping) {
+    const kindLabel = note.emoji ? `${note.emoji} Helping Hand` : "🖐 Helping Hand";
+    helpingHeaderHtml = `<div style="font-size:0.7rem; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; color:var(--brand-blue, #1E88E5); margin-bottom:0.35rem;">${kindLabel}</div>`;
+
+    if (note.contact_public) {
+      const lines = [];
+      if (note.contact_name) lines.push(`<div>👤 ${note.contact_name}</div>`);
+      if (note.contact_phone) lines.push(`<div>📞 <a href="tel:${note.contact_phone}" style="color:var(--brand-blue,#1E88E5);text-decoration:none;">${note.contact_phone}</a></div>`);
+      if (note.contact_email) lines.push(`<div>✉️ <a href="mailto:${note.contact_email}" style="color:var(--brand-blue,#1E88E5);text-decoration:none;">${note.contact_email}</a></div>`);
+      lines.push(`<button type="button" class="note-chat-btn" style="margin-top:0.4rem;background:var(--brand-blue,#1E88E5);color:#fff;border:none;border-radius:999px;padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;cursor:pointer;">💬 Message in chat</button>`);
+      contactHtml = `<div style="font-size:0.8rem; color:var(--ui-text); margin:0.4rem 0; line-height:1.6;">${lines.join("")}</div>`;
+    }
+
+    const isOwner = note.owner_id && note.owner_id === getChatUserId();
+    const labels = helpingResolveLabels(note.emoji);
+    if (isResolved) {
+      foundBadgeHtml = `<span class="note-found-badge">${labels.badge}</span>`;
+      // Owner can toggle the green state back off
+      if (isOwner) {
+        resolveBtnHtml = `<div style="margin-top:0.5rem;"><button type="button" class="note-resolve-btn note-resolve-reopen" data-resolve="false">${labels.reopen}</button></div>`;
+      }
+    } else if (isOwner) {
+      resolveBtnHtml = `<div style="margin-top:0.5rem;"><button type="button" class="note-resolve-btn" data-resolve="true">${labels.resolve}</button></div>`;
+    }
+  }
+
+  return `
+    <div style="max-width: 220px; padding: 0.25rem;">
+      ${helpingHeaderHtml}
+      ${imageHtml}
+      ${locationHtml}
+      <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${note.text}${permBadge}${foundBadgeHtml}</div>
+      ${contactHtml}
+      <div style="font-size: 0.75rem; color: var(--ui-muted);">${timeAgo} &middot; ${expiryText}</div>
+      ${resolveBtnHtml}
+      ${adminDeleteHtml}
+    </div>
+  `;
+}
+
+// Wire up the interactive buttons inside an opened street-note popup.
+function attachStreetNotePopupHandlers(root, note) {
+  if (!root) return;
+  const delBtn = root.querySelector(".note-admin-delete");
+  if (delBtn) {
+    delBtn.addEventListener("click", async () => {
+      if (!confirm("Delete this street note?")) return;
+      try {
+        await deleteStreetNoteById(note.id);
+        map.closePopup();
+        await fetchStreetNotes();
+      } catch (err) {
+        alert("Failed to delete note.");
+      }
+    });
+  }
+  const chatBtn = root.querySelector(".note-chat-btn");
+  if (chatBtn) {
+    chatBtn.addEventListener("click", () => {
+      map.closePopup();
+      if (typeof openChatModal === "function") openChatModal();
+    });
+  }
+  const resolveBtn = root.querySelector(".note-resolve-btn");
+  if (resolveBtn) {
+    const target = resolveBtn.dataset.resolve === "true";
+    const originalLabel = resolveBtn.textContent;
+    resolveBtn.addEventListener("click", async () => {
+      resolveBtn.disabled = true;
+      resolveBtn.textContent = "Saving…";
+      try {
+        await resolveStreetNote(note.id, target);
+        map.closePopup();
+        await fetchStreetNotes();
+        const lost = HELPING_LOST.has(note.emoji);
+        showToast(target ? (lost ? "✅ Marked as found" : "✅ Marked as no longer needed") : "↩︎ Reactivated");
+      } catch (err) {
+        resolveBtn.disabled = false;
+        resolveBtn.textContent = originalLabel;
+        alert("Could not update. Please try again.");
+      }
+    });
+  }
+}
+
 function renderStreetNotes() {
   if (!streetNotesLayer) return;
   streetNotesLayer.clearLayers();
@@ -2943,99 +3067,8 @@ function renderStreetNotes() {
     });
     
     const marker = L.marker([note.latitude, note.longitude], { icon });
-
-    const timeAgo = humanTimeAgo(note.created_at);
-    const isForever = note.forever || !note.expires_at;
-    const expiryText = isForever ? "Permanent" : formatRemainingTime(note.expires_at);
-    const permBadge = isForever ? '<span class="note-permanent-badge">PERMANENT</span>' : '';
-    const imageHtml = note.image_url
-      ? `<div style="margin-bottom: 0.5rem;"><img src="${note.image_url}" alt="Street note image" style="display:block; width:100%; max-width:200px; max-height:140px; object-fit:cover; border-radius: 6px; border: 1px solid var(--ui-border);" /></div>`
-      : "";
-    const locationHtml = note.location_text
-      ? `<div style="font-size: 0.75rem; color: var(--ui-muted); margin-bottom: 0.5rem;">📍 ${note.location_text}</div>`
-      : "";
-    const adminDeleteHtml = isAdminLoggedIn
-      ? `<div style="margin-top: 0.5rem;"><button type="button" class="note-admin-delete" data-note-id="${note.id}">🗑️ Delete note</button></div>`
-      : "";
-
-    // ── Helping Hand extras: kind tag, found badge, contact, owner toggle ──
-    let helpingHeaderHtml = "";
-    let contactHtml = "";
-    let foundBadgeHtml = "";
-    let resolveBtnHtml = "";
-    if (isHelping) {
-      const kindLabel = note.emoji ? `${note.emoji} Helping Hand` : "🖐 Helping Hand";
-      helpingHeaderHtml = `<div style="font-size:0.7rem; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; color:var(--brand-blue, #1E88E5); margin-bottom:0.35rem;">${kindLabel}</div>`;
-
-      if (note.contact_public) {
-        const lines = [];
-        if (note.contact_name) lines.push(`<div>👤 ${note.contact_name}</div>`);
-        if (note.contact_phone) lines.push(`<div>📞 <a href="tel:${note.contact_phone}" style="color:var(--brand-blue,#1E88E5);text-decoration:none;">${note.contact_phone}</a></div>`);
-        if (note.contact_email) lines.push(`<div>✉️ <a href="mailto:${note.contact_email}" style="color:var(--brand-blue,#1E88E5);text-decoration:none;">${note.contact_email}</a></div>`);
-        lines.push(`<button type="button" class="note-chat-btn" style="margin-top:0.4rem;background:var(--brand-blue,#1E88E5);color:#fff;border:none;border-radius:999px;padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;cursor:pointer;">💬 Message in chat</button>`);
-        contactHtml = `<div style="font-size:0.8rem; color:var(--ui-text); margin:0.4rem 0; line-height:1.6;">${lines.join("")}</div>`;
-      }
-
-      if (isResolved) {
-        foundBadgeHtml = `<span class="note-found-badge">Found ✓</span>`;
-      } else if (HELPING_RESOLVABLE.has(note.emoji) && note.owner_id && note.owner_id === getChatUserId()) {
-        resolveBtnHtml = `<div style="margin-top:0.5rem;"><button type="button" class="note-resolve-btn">✅ Mark as found</button></div>`;
-      }
-    }
-
-    marker.bindPopup(`
-      <div style="max-width: 220px; padding: 0.25rem;">
-        ${helpingHeaderHtml}
-        ${imageHtml}
-        ${locationHtml}
-        <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${note.text}${permBadge}${foundBadgeHtml}</div>
-        ${contactHtml}
-        <div style="font-size: 0.75rem; color: var(--ui-muted);">${timeAgo} &middot; ${expiryText}</div>
-        ${resolveBtnHtml}
-        ${adminDeleteHtml}
-      </div>
-    `);
-
-    marker.on("popupopen", (e) => {
-      const root = e.popup.getElement();
-      const btn = root.querySelector(".note-admin-delete");
-      if (btn) {
-        btn.addEventListener("click", async () => {
-          if (!confirm("Delete this street note?")) return;
-          try {
-            await deleteStreetNoteById(note.id);
-            map.closePopup();
-            await fetchStreetNotes();
-          } catch (err) {
-            alert("Failed to delete note.");
-          }
-        });
-      }
-      const chatBtn = root.querySelector(".note-chat-btn");
-      if (chatBtn) {
-        chatBtn.addEventListener("click", () => {
-          map.closePopup();
-          if (typeof openChatModal === "function") openChatModal();
-        });
-      }
-      const resolveBtn = root.querySelector(".note-resolve-btn");
-      if (resolveBtn) {
-        resolveBtn.addEventListener("click", async () => {
-          resolveBtn.disabled = true;
-          resolveBtn.textContent = "Saving…";
-          try {
-            await resolveStreetNote(note.id, true);
-            map.closePopup();
-            await fetchStreetNotes();
-            showToast("✅ Marked as found");
-          } catch (err) {
-            resolveBtn.disabled = false;
-            resolveBtn.textContent = "✅ Mark as found";
-            alert("Could not update. Please try again.");
-          }
-        });
-      }
-    });
+    marker.bindPopup(buildStreetNotePopupHtml(note));
+    marker.on("popupopen", (e) => attachStreetNotePopupHandlers(e.popup.getElement(), note));
 
     streetNotesLayer.addLayer(marker);
   });

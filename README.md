@@ -79,12 +79,12 @@ Helping Hand posts reuse the Street Note experience (optional photo, optional de
 - The author chooses whether they can be reached at all ("Let people reach me").
 - Phone/email exposure is **opt-in** — leave them blank to be reached via chat only. Personal contact fields are stripped server-side from the public feed unless the author opted in.
 
-**Lost pet / lost kid status**
-- Only the **original poster** can mark a post **"Found."**
-- A resolved post stays on the map with a green **Found ✓** badge (and green pin) until its duration expires.
-- Otherwise the post simply expires on its timer like any other note.
+**Resolved status (owner toggle)**
+- Only the **original poster** can toggle a post's resolved state (and toggle it back off); other users only see the result.
+- The wording adapts to the category: **lost** posts (🐾 Lost Pet, 👩‍👦 Lost Kid) use **"Found ✓"**; all other helping types (umbrella, charger, first aid, dog, cat) use **"No longer needed ✓"**.
+- A resolved post stays on the map with a green badge (and green pin) until its duration expires; otherwise it simply expires on its timer like any other note.
 
-**Data model:** Helping Hand posts are stored in the existing `street_notes` collection with a `kind: "helping_hand"` discriminator, plus `owner_id`, `contact_name`, `contact_phone`, `contact_email`, `contact_public`, and `resolved`. A `POST /api/street-notes/{id}/resolve` endpoint toggles the found status (owner-verified).
+**Data model:** Helping Hand posts are stored in the existing `street_notes` collection with a `kind: "helping_hand"` discriminator, plus `owner_id`, `contact_name`, `contact_phone`, `contact_email`, `contact_public`, and `resolved`. A `POST /api/street-notes/{id}/resolve` endpoint toggles the resolved status (owner-verified).
 
 > **Planned (deferred) — 000 safety banner.** For **Lost Kid** (and possibly **Lost Pet**) posts we plan to surface a prominent safety banner so the post never substitutes for emergency services:
 >
