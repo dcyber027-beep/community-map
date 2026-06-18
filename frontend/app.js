@@ -47,6 +47,27 @@ function applyAvatarToUI() {
   document.querySelectorAll(".avatar-emoji-btn").forEach(b => {
     b.classList.toggle("active", b.dataset.emoji === avatar.emoji);
   });
+  updatePresenceDot();
+}
+
+// Green presence dot = your avatar + location are visible to others.
+// Red = identity hidden (avatar off ⇒ location sharing off too).
+function updatePresenceDot() {
+  const hidden = avatar.emoji === "🚫";
+  const title = hidden
+    ? "You're hidden — others can't see your avatar or location"
+    : "You're visible — others can see your avatar and location";
+  const pill = document.getElementById("online-pill");
+  if (pill) {
+    pill.classList.toggle("identity-hidden", hidden);
+    pill.title = title;
+  }
+  // Desktop Live Updates chat button carries the same red/green dot
+  const dluBtn = document.getElementById("dlu-chat-btn");
+  if (dluBtn) {
+    dluBtn.classList.toggle("identity-hidden", hidden);
+    dluBtn.title = title;
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 let locationDescriptionCache = new Map(); // Cache for location descriptions
@@ -71,19 +92,40 @@ function activateView(view) {
   const segList = document.getElementById("seg-list");
   mapView.classList.remove("slide-from-left", "slide-from-right");
   listView.classList.remove("slide-from-left", "slide-from-right");
+  const dcMap = document.getElementById("dc-map");
+  const dcList = document.getElementById("dc-list");
   if (view === "list") {
     listView.classList.add("active", "slide-from-right");
     mapView.classList.remove("active");
     if (segMap) segMap.classList.remove("active");
     if (segList) segList.classList.add("active");
+    if (dcMap) dcMap.classList.remove("active");
+    if (dcList) dcList.classList.add("active");
     renderList();
   } else {
     mapView.classList.add("active", "slide-from-left");
     listView.classList.remove("active");
     if (segMap) segMap.classList.add("active");
     if (segList) segList.classList.remove("active");
+    if (dcMap) dcMap.classList.add("active");
+    if (dcList) dcList.classList.remove("active");
     if (map) setTimeout(() => map.invalidateSize(), 80);
   }
+}
+
+// Wire the desktop-only grouped control panel to existing handlers
+function initDesktopControls() {
+  const bind = (id, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("click", fn);
+  };
+  bind("dc-map", () => activateView("map"));
+  bind("dc-list", () => activateView("list"));
+  bind("dc-filter", () => openFilterSheet());
+  bind("dc-layers", () => openLayersSheet());
+  bind("dc-notes", () => openStreetNoteModal());
+  bind("dc-report", () => openReportModal());
+  bind("dlu-chat-btn", () => openChatModal());
 }
 let liveUpdatesContent = ""; // Store live updates content
 let liveUpdatesScrollInterval = null; // Store scroll interval
@@ -156,13 +198,23 @@ let reportWizardData = {
 
 // ── Wizard state — Community Discovery ───────────────────────────────────
 let discoveryWizardStep = 1;
+// "discovery" = classic street note, "helping_hand" = community mutual aid
+let discoveryMode = "discovery";
+// True while the fork (mode chooser) is showing, before the numbered steps
+let onDiscoveryFork = true;
 let discoveryWizardData = {
   emoji: null,
   label: '',
   questionAnswer: null,
   note: '',
-  photoDataUrl: null
+  photoDataUrl: null,
+  contactPublic: false,
+  contactName: '',
+  contactPhone: '',
+  contactEmail: ''
 };
+// Helping Hand categories whose "Found" status can be toggled by the owner
+const HELPING_RESOLVABLE = new Set(["🐾", "👩‍👦"]);
 let discoveryLocationMap = null;
 let discoveryLocationMarker = null;
 
@@ -191,6 +243,17 @@ function formatRemainingTime(expiresAt) {
 async function deleteStreetNoteById(noteId) {
   const res = await fetch(`${API_BASE}/admin/street-notes/${noteId}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete street note");
+}
+
+// Toggle a Helping Hand post's "Found" status (owner only, enforced server-side)
+async function resolveStreetNote(noteId, resolved) {
+  const res = await fetch(`${API_BASE}/street-notes/${noteId}/resolve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ owner_id: getChatUserId(), resolved: !!resolved })
+  });
+  if (!res.ok) throw new Error("Failed to update note");
+  return res.json();
 }
 
 // Load user reactions from localStorage on page load
@@ -235,6 +298,14 @@ const streetNoteAccentMap = {
   "🔌": "#f59e0b", // charging — amber
   "🚧": "#f97316", // construction — hazard orange
   "📍": "#1E88E5", // other — brand blue
+  // Helping Hand categories
+  "🐶": "#f59e0b", // dog — friendly amber
+  "🐱": "#fb923c", // cat — warm orange
+  "🐾": "#ef4444", // lost pet — alert red
+  "👩‍👦": "#ef4444", // lost kid — alert red
+  "☔": "#0ea5e9", // umbrella — sky blue
+  "🔋": "#22c55e", // spare charger — green
+  "🩹": "#ec4899", // first aid — pink
 };
 function streetNoteAccent(emoji) {
   return streetNoteAccentMap[emoji] || "#1E88E5";
@@ -420,6 +491,9 @@ function createMarkerClusterGroup(countClass) {
 }
 
 function cityReferenceListTitle(note) {
+  if (note.kind === "helping_hand") {
+    return note.resolved ? "Helping Hand · Found ✓" : "Helping Hand";
+  }
   if (!note.isCityReference) return "Discovery";
   if (note.referenceType === "toilet") return "Public Toilet";
   return "Drinking Fountain";
@@ -572,7 +646,11 @@ function renderList() {
     const locText = note.location_text || `${Number(note.latitude).toFixed(4)}, ${Number(note.longitude).toFixed(4)}`;
     const chip = note.isCityReference
       ? `<span class="list-chip chip-official">Official</span>`
-      : `<span class="list-chip chip-note">Discovery</span>`;
+      : note.kind === "helping_hand"
+        ? (note.resolved
+            ? `<span class="list-chip chip-found">Found ✓</span>`
+            : `<span class="list-chip chip-helping">Helping Hand</span>`)
+        : `<span class="list-chip chip-note">Discovery</span>`;
 
     const row = document.createElement("button");
     row.type = "button";
@@ -1338,6 +1416,11 @@ function displayLiveUpdates() {
 
   startTickerScrolling(".updates-scroll-container", "#updates-text");
 
+  // Desktop-only Live Updates ticker mirrors the same content
+  const dluText = document.getElementById("dlu-text");
+  if (dluText) dluText.textContent = liveUpdatesContent;
+  startTickerScrolling(".dlu-scroll-container", "#dlu-text");
+
   const chatModal = document.getElementById("chat-modal");
   if (chatModal && !chatModal.classList.contains("hidden")) {
     renderChatMessages();
@@ -1372,14 +1455,15 @@ function startLiveUpdatesScrolling() {
 async function updateActiveUsersCount() {
   const onlineText = document.getElementById("online-count-text");
   const legacyText = document.getElementById("active-users-text");
+  const dluCount = document.getElementById("dlu-count-text");
   const setText = (count) => {
     const label = `${count} online`;
     if (onlineText) onlineText.textContent = label;
-    if (legacyText) {
-      legacyText.textContent =
-        count === 1 ? "1 person active on the map, tap to chat"
-                    : `${count} people active on the map, tap to chat`;
-    }
+    const activeLabel = count === 1
+      ? "1 person active on the map, tap to chat"
+      : `${count} people active on the map, tap to chat`;
+    if (legacyText) legacyText.textContent = activeLabel;
+    if (dluCount) dluCount.textContent = activeLabel;
   };
 
   try {
@@ -2441,7 +2525,10 @@ function initMap() {
   
   // Layer toggles now live in the Layers bottom sheet (no map control)
   // Locate button is a floating HTML control (see initLocateButton)
-  
+
+  // Street Highlights legend (CSS shows it on desktop only)
+  addStreetHighlightsLegend();
+
   // Load and render admin street highlights
   fetchAdminStreetHighlights();
   
@@ -2553,7 +2640,7 @@ function showHighlightDescription(highlight) {
 function addStreetHighlightsLegend() {
   if (!map) return;
   
-  const legend = L.control({ position: "bottomleft" });
+  const legend = L.control({ position: "topright" });
   
   legend.onAdd = function() {
     const div = L.DomUtil.create("div", "street-highlights-legend");
@@ -2838,13 +2925,17 @@ function renderStreetNotes() {
     // follows the Discoveries toggle.
     if (isFacilityNote(note) ? !showPublicFacilities : !showStreetNotes) return;
     const pinEmoji = note.emoji || "📝";
+    const isHelping = note.kind === "helping_hand";
+    const isResolved = isHelping && !!note.resolved;
     // Tint the pin ring per discovery category so notes read instantly.
-    const accent = streetNoteAccent(pinEmoji);
+    const accent = isResolved ? "#22c55e" : streetNoteAccent(pinEmoji);
+    const foundDot = isResolved ? '<span class="map-pin-found" aria-hidden="true">✓</span>' : '';
     const icon = L.divIcon({
       className: "map-pin-wrap",
       html: `
-        <div class="map-pin map-pin-note" style="--pin-accent:${accent}">
+        <div class="map-pin map-pin-note${isResolved ? ' is-found' : ''}" style="--pin-accent:${accent}">
           <span class="map-pin-emoji">${pinEmoji}</span>
+          ${foundDot}
         </div>`,
       iconSize: [38, 46],
       iconAnchor: [19, 44],
@@ -2866,18 +2957,48 @@ function renderStreetNotes() {
     const adminDeleteHtml = isAdminLoggedIn
       ? `<div style="margin-top: 0.5rem;"><button type="button" class="note-admin-delete" data-note-id="${note.id}">🗑️ Delete note</button></div>`
       : "";
+
+    // ── Helping Hand extras: kind tag, found badge, contact, owner toggle ──
+    let helpingHeaderHtml = "";
+    let contactHtml = "";
+    let foundBadgeHtml = "";
+    let resolveBtnHtml = "";
+    if (isHelping) {
+      const kindLabel = note.emoji ? `${note.emoji} Helping Hand` : "🖐 Helping Hand";
+      helpingHeaderHtml = `<div style="font-size:0.7rem; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; color:var(--brand-blue, #1E88E5); margin-bottom:0.35rem;">${kindLabel}</div>`;
+
+      if (note.contact_public) {
+        const lines = [];
+        if (note.contact_name) lines.push(`<div>👤 ${note.contact_name}</div>`);
+        if (note.contact_phone) lines.push(`<div>📞 <a href="tel:${note.contact_phone}" style="color:var(--brand-blue,#1E88E5);text-decoration:none;">${note.contact_phone}</a></div>`);
+        if (note.contact_email) lines.push(`<div>✉️ <a href="mailto:${note.contact_email}" style="color:var(--brand-blue,#1E88E5);text-decoration:none;">${note.contact_email}</a></div>`);
+        lines.push(`<button type="button" class="note-chat-btn" style="margin-top:0.4rem;background:var(--brand-blue,#1E88E5);color:#fff;border:none;border-radius:999px;padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;cursor:pointer;">💬 Message in chat</button>`);
+        contactHtml = `<div style="font-size:0.8rem; color:var(--ui-text); margin:0.4rem 0; line-height:1.6;">${lines.join("")}</div>`;
+      }
+
+      if (isResolved) {
+        foundBadgeHtml = `<span class="note-found-badge">Found ✓</span>`;
+      } else if (HELPING_RESOLVABLE.has(note.emoji) && note.owner_id && note.owner_id === getChatUserId()) {
+        resolveBtnHtml = `<div style="margin-top:0.5rem;"><button type="button" class="note-resolve-btn">✅ Mark as found</button></div>`;
+      }
+    }
+
     marker.bindPopup(`
       <div style="max-width: 220px; padding: 0.25rem;">
+        ${helpingHeaderHtml}
         ${imageHtml}
         ${locationHtml}
-        <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${note.text}${permBadge}</div>
+        <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${note.text}${permBadge}${foundBadgeHtml}</div>
+        ${contactHtml}
         <div style="font-size: 0.75rem; color: var(--ui-muted);">${timeAgo} &middot; ${expiryText}</div>
+        ${resolveBtnHtml}
         ${adminDeleteHtml}
       </div>
     `);
 
     marker.on("popupopen", (e) => {
-      const btn = e.popup.getElement().querySelector(".note-admin-delete");
+      const root = e.popup.getElement();
+      const btn = root.querySelector(".note-admin-delete");
       if (btn) {
         btn.addEventListener("click", async () => {
           if (!confirm("Delete this street note?")) return;
@@ -2887,6 +3008,30 @@ function renderStreetNotes() {
             await fetchStreetNotes();
           } catch (err) {
             alert("Failed to delete note.");
+          }
+        });
+      }
+      const chatBtn = root.querySelector(".note-chat-btn");
+      if (chatBtn) {
+        chatBtn.addEventListener("click", () => {
+          map.closePopup();
+          if (typeof openChatModal === "function") openChatModal();
+        });
+      }
+      const resolveBtn = root.querySelector(".note-resolve-btn");
+      if (resolveBtn) {
+        resolveBtn.addEventListener("click", async () => {
+          resolveBtn.disabled = true;
+          resolveBtn.textContent = "Saving…";
+          try {
+            await resolveStreetNote(note.id, true);
+            map.closePopup();
+            await fetchStreetNotes();
+            showToast("✅ Marked as found");
+          } catch (err) {
+            resolveBtn.disabled = false;
+            resolveBtn.textContent = "✅ Mark as found";
+            alert("Could not update. Please try again.");
           }
         });
       }
@@ -2929,7 +3074,9 @@ function openStreetNoteModal() {
 
   // Reset wizard state
   discoveryWizardStep = 1;
-  discoveryWizardData = { emoji: null, label: '', questionAnswer: null, note: '', photoDataUrl: null };
+  discoveryMode = "discovery";
+  onDiscoveryFork = true;
+  discoveryWizardData = { emoji: null, label: '', questionAnswer: null, note: '', photoDataUrl: null, contactPublic: false, contactName: '', contactPhone: '', contactEmail: '' };
   selectedNoteEmoji = null;
   streetNoteLocation = null;
 
@@ -2953,15 +3100,37 @@ function openStreetNoteModal() {
   if (durPlayer) durPlayer.classList.remove("is-forever");
   if (foreverCb) foreverCb.checked = false;
 
-  // Reset all step visibility
+  // Reset all step visibility — start on the fork screen
   for (let i = 1; i <= 4; i++) {
     const el = document.getElementById(`discovery-step-${i}`);
-    if (el) { el.style.display = i === 1 ? '' : 'none'; }
+    if (el) { el.style.display = 'none'; }
+  }
+  const forkPanel = document.getElementById("discovery-fork");
+  if (forkPanel) forkPanel.style.display = '';
+
+  // Reset category grids selection + visibility (street note grid default)
+  const catGrid = document.getElementById("discovery-category-grid");
+  if (catGrid) {
+    catGrid.style.display = '';
+    catGrid.querySelectorAll(".cat-card").forEach(c => c.classList.remove("selected"));
+  }
+  const helpGrid = document.getElementById("helping-category-grid");
+  if (helpGrid) {
+    helpGrid.style.display = 'none';
+    helpGrid.querySelectorAll(".cat-card").forEach(c => c.classList.remove("selected"));
   }
 
-  // Reset category grid selection
-  const catGrid = document.getElementById("discovery-category-grid");
-  if (catGrid) catGrid.querySelectorAll(".cat-card").forEach(c => c.classList.remove("selected"));
+  // Reset Helping Hand contact fields
+  const contactField = document.getElementById("helping-contact-field");
+  if (contactField) contactField.style.display = 'none';
+  const contactPublic = document.getElementById("helping-contact-public");
+  if (contactPublic) contactPublic.checked = false;
+  const contactDetails = document.getElementById("helping-contact-details");
+  if (contactDetails) contactDetails.style.display = 'none';
+  ["helping-contact-name", "helping-contact-phone", "helping-contact-email"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
 
   // Reset step 2 fields
   const textarea = document.getElementById("street-note-text");
@@ -3006,13 +3175,56 @@ function closeStreetNoteModal() {
 function updateDiscoveryStepDots() {
   const dotsEl = document.getElementById('discovery-step-dots');
   if (!dotsEl) return;
+  dotsEl.style.visibility = onDiscoveryFork ? 'hidden' : 'visible';
   const dots = dotsEl.querySelectorAll('.wdot');
-  dots.forEach((dot, i) => dot.classList.toggle('active', i === discoveryWizardStep - 1));
+  dots.forEach((dot, i) => dot.classList.toggle('active', !onDiscoveryFork && i === discoveryWizardStep - 1));
 }
 
 function updateDiscoveryBackBtn() {
   const btn = document.getElementById('discovery-back-btn');
-  if (btn) btn.style.visibility = discoveryWizardStep > 1 ? 'visible' : 'hidden';
+  // Back is hidden on the fork screen, visible during every numbered step
+  // (from step 1 it returns to the fork chooser).
+  if (btn) btn.style.visibility = onDiscoveryFork ? 'hidden' : 'visible';
+}
+
+// Show the mode chooser (fork) screen
+function showDiscoveryFork() {
+  onDiscoveryFork = true;
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById(`discovery-step-${i}`);
+    if (el) el.style.display = 'none';
+  }
+  const fork = document.getElementById("discovery-fork");
+  if (fork) fork.style.display = '';
+  updateDiscoveryStepDots();
+  updateDiscoveryBackBtn();
+}
+
+// Begin the chosen flow: "discovery" (street note) or "helping_hand"
+function startDiscoveryFlow(mode) {
+  discoveryMode = mode;
+  onDiscoveryFork = false;
+  const fork = document.getElementById("discovery-fork");
+  if (fork) fork.style.display = 'none';
+
+  const helping = mode === "helping_hand";
+  const discGrid = document.getElementById("discovery-category-grid");
+  const helpGrid = document.getElementById("helping-category-grid");
+  if (discGrid) discGrid.style.display = helping ? 'none' : '';
+  if (helpGrid) helpGrid.style.display = helping ? '' : 'none';
+
+  const title = document.getElementById("discovery-step1-title");
+  const subtitle = document.getElementById("discovery-step1-subtitle");
+  if (title) title.textContent = helping ? "Helping Hand" : "Share a discovery";
+  if (subtitle) subtitle.textContent = helping
+    ? "Lost a pet or kid, or have something to share?"
+    : "Choose the type of place or thing you want to share.";
+
+  // Contact field only applies to Helping Hand
+  const contactField = document.getElementById("helping-contact-field");
+  if (contactField) contactField.style.display = helping ? '' : 'none';
+
+  goToDiscoveryStep(1);
 }
 
 function goToDiscoveryStep(step) {
@@ -3056,15 +3268,27 @@ function buildDiscoveryReviewCard() {
     photoHtml = `<img src="${discoveryWizardData.photoDataUrl}" alt="Discovery photo" style="width:100%;height:120px;object-fit:cover;border-radius:10px;margin-bottom:0.625rem;display:block;" />`;
   }
 
+  const helping = discoveryMode === "helping_hand";
+  let contactHtml = '';
+  if (helping && discoveryWizardData.contactPublic) {
+    const bits = [];
+    if (discoveryWizardData.contactName) bits.push(discoveryWizardData.contactName);
+    if (discoveryWizardData.contactPhone) bits.push(discoveryWizardData.contactPhone);
+    if (discoveryWizardData.contactEmail) bits.push(discoveryWizardData.contactEmail);
+    bits.push('Community chat');
+    contactHtml = `<div class="review-row"><span class="review-row-icon">📨</span><span class="review-row-label">Contact</span><span style="font-size:0.8rem">${bits.join(' · ')}</span></div>`;
+  }
+
   reviewCard.innerHTML = `
     ${photoHtml}
     <div class="review-row">
       <span class="review-row-icon">${discoveryWizardData.emoji || '📍'}</span>
       <span class="review-row-label">Type</span>
-      <span>${discoveryWizardData.label || 'Discovery'}</span>
+      <span>${discoveryWizardData.label || (helping ? 'Helping Hand' : 'Discovery')}</span>
     </div>
     ${questionHtml}
     ${noteText ? `<div class="review-row"><span class="review-row-icon">📝</span><span class="review-row-label">Note</span><span style="font-size:0.8rem">${noteText.substring(0,80)}${noteText.length>80?'…':''}</span></div>` : ''}
+    ${contactHtml}
     <div class="review-row">
       <span class="review-row-icon">⏳</span>
       <span class="review-row-label">Duration</span>
@@ -3077,7 +3301,10 @@ function buildDiscoveryReviewCard() {
     </div>
   `;
   const submitBtn = document.getElementById("street-note-submit");
-  if (submitBtn) submitBtn.disabled = false;
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = helping ? "Post Request" : "Post Discovery";
+  }
 }
 
 function renderEmojiShortcutBar() {
@@ -3168,6 +3395,8 @@ async function submitStreetNote() {
   const lat = streetNoteLocation ? streetNoteLocation.lat : (userLocation ? userLocation.lat : MELBOURNE_CBD.lat);
   const lng = streetNoteLocation ? streetNoteLocation.lng : (userLocation ? userLocation.lng : MELBOURNE_CBD.lng);
 
+  const helping = discoveryMode === "helping_hand";
+
   // Build note text from question answer + user note
   let text = discoveryWizardData.note || "";
   if (discoveryWizardData.questionAnswer && discoveryWizardData.label) {
@@ -3179,10 +3408,13 @@ async function submitStreetNote() {
   if (!text && discoveryWizardData.label) {
     text = `${discoveryWizardData.label} here`;
   }
-  if (!text) text = "Discovery";
+  if (!text) text = helping ? "Helping Hand" : "Discovery";
 
   const submitBtn = document.getElementById("street-note-submit");
+  const submitLabel = helping ? "Post Request" : "Post Discovery";
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Posting…"; }
+
+  const contactPublic = helping && !!discoveryWizardData.contactPublic;
 
   try {
     const response = await fetch(`${API_BASE}/street-notes`, {
@@ -3196,14 +3428,21 @@ async function submitStreetNote() {
         image_url: discoveryWizardData.photoDataUrl || "",
         emoji: discoveryWizardData.emoji || null,
         duration_hours: noteForever ? null : noteDurationHours,
-        forever: noteForever
+        forever: noteForever,
+        kind: helping ? "helping_hand" : "discovery",
+        owner_id: getChatUserId(),
+        contact_public: contactPublic,
+        contact_name: contactPublic ? (discoveryWizardData.contactName || "").trim() : "",
+        contact_phone: contactPublic ? (discoveryWizardData.contactPhone || "").trim() : "",
+        contact_email: contactPublic ? (discoveryWizardData.contactEmail || "").trim() : "",
+        resolved: false
       }),
     });
 
     if (response.ok) {
       await fetchStreetNotes();
       closeStreetNoteModal();
-      showToast('📍 Discovery posted!');
+      showToast(helping ? '🖐 Helping Hand posted!' : '📍 Discovery posted!');
     } else {
       const errText = await response.text();
       throw new Error(`Failed to post: ${response.status} ${errText}`);
@@ -3211,7 +3450,7 @@ async function submitStreetNote() {
   } catch (error) {
     console.error("Failed to post discovery:", error);
     alert(error && error.message ? error.message : "Failed to post. Please try again.");
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Post Discovery"; }
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = submitLabel; }
   }
 }
 
@@ -3343,8 +3582,56 @@ function initStreetNoteModal() {
   if (discBackBtn) {
     discBackBtn.addEventListener("click", () => {
       if (discoveryWizardStep > 1) goToDiscoveryStep(discoveryWizardStep - 1);
+      else showDiscoveryFork();
     });
   }
+
+  // ── Fork screen: choose street note vs helping hand ────────────────────
+  const forkNoteBtn = document.getElementById("fork-note");
+  if (forkNoteBtn) forkNoteBtn.addEventListener("click", () => startDiscoveryFlow("discovery"));
+  const forkHelpBtn = document.getElementById("fork-helping");
+  if (forkHelpBtn) forkHelpBtn.addEventListener("click", () => startDiscoveryFlow("helping_hand"));
+
+  // ── Helping Hand category grid ─────────────────────────────────────────
+  const helpCatGrid = document.getElementById("helping-category-grid");
+  if (helpCatGrid) {
+    helpCatGrid.addEventListener("click", (e) => {
+      const card = e.target.closest(".cat-card");
+      if (!card) return;
+      helpCatGrid.querySelectorAll(".cat-card").forEach(c => c.classList.remove("selected"));
+      card.classList.add("selected");
+      discoveryWizardData.emoji = card.dataset.value;
+      discoveryWizardData.label = card.dataset.label || card.querySelector(".cat-label")?.textContent || '';
+      selectedNoteEmoji = discoveryWizardData.emoji;
+      discoveryWizardData.questionAnswer = null;
+
+      const step2Title = document.getElementById("discovery-step2-title");
+      if (step2Title) step2Title.textContent = discoveryWizardData.label || "Details";
+
+      // Helping Hand posts never use the working/not-working binary question
+      const questionField = document.getElementById("discovery-question-field");
+      if (questionField) questionField.style.display = 'none';
+
+      setTimeout(() => goToDiscoveryStep(2), 180);
+    });
+  }
+
+  // ── Helping Hand contact toggle ────────────────────────────────────────
+  const contactPublicCb = document.getElementById("helping-contact-public");
+  if (contactPublicCb) {
+    contactPublicCb.addEventListener("change", () => {
+      discoveryWizardData.contactPublic = contactPublicCb.checked;
+      const details = document.getElementById("helping-contact-details");
+      if (details) details.style.display = contactPublicCb.checked ? '' : 'none';
+    });
+  }
+  const bindContactInput = (id, key) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", () => { discoveryWizardData[key] = el.value; });
+  };
+  bindContactInput("helping-contact-name", "contactName");
+  bindContactInput("helping-contact-phone", "contactPhone");
+  bindContactInput("helping-contact-email", "contactEmail");
 
   // ── Discovery step 2: photo upload ─────────────────────────────────────
   const discPhotoInput = document.getElementById("street-note-image");
@@ -4934,6 +5221,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initEmergencyContact();
   initHighlightStreetModal();
   initStreetNoteModal();
+  initDesktopControls();
   initPeerBroadcasting();
 
   await waitForBackend();

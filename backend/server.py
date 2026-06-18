@@ -589,6 +589,22 @@ class StreetNoteCreate(BaseModel):
     emoji: Optional[str] = None
     duration_hours: Optional[int] = 12
     forever: Optional[bool] = False
+    # "discovery" (default street note) or "helping_hand" (community mutual aid)
+    kind: Optional[str] = "discovery"
+    # Stable client id of the author (re-uses chatUserId) so only they can resolve
+    owner_id: Optional[str] = None
+    # Optional contact details for Helping Hand posts. Only surfaced publicly
+    # when contact_public is True (see get_street_notes privacy strip).
+    contact_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_public: Optional[bool] = False
+    # Lost pet / lost kid "Found" status — toggled by the owner
+    resolved: Optional[bool] = False
+
+class StreetNoteResolve(BaseModel):
+    owner_id: Optional[str] = None
+    resolved: bool = True
 
 @api_router.get("/street-notes")
 async def get_street_notes():
@@ -605,12 +621,19 @@ async def get_street_notes():
 
     notes = await db.street_notes.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
-    # Ensure timestamps are strings
+    # Ensure timestamps are strings + backfill new fields for older docs
     for note in notes:
         if isinstance(note.get('created_at'), datetime):
             note['created_at'] = note['created_at'].isoformat()
         if isinstance(note.get('expires_at'), datetime):
             note['expires_at'] = note['expires_at'].isoformat()
+        note.setdefault('kind', 'discovery')
+        note.setdefault('resolved', False)
+        note.setdefault('contact_public', False)
+        # Privacy: only expose personal contact details when the author opted in
+        if not note.get('contact_public'):
+            note['contact_phone'] = None
+            note['contact_email'] = None
 
     return notes
 
@@ -645,6 +668,13 @@ async def create_street_note(note_data: StreetNoteCreate):
         "image_url": note_data.image_url or "",
         "emoji": (note_data.emoji or "").strip() or None,
         "forever": bool(note_data.forever),
+        "kind": note_data.kind or "discovery",
+        "owner_id": note_data.owner_id or None,
+        "contact_name": (note_data.contact_name or "").strip() or None,
+        "contact_phone": (note_data.contact_phone or "").strip() or None,
+        "contact_email": (note_data.contact_email or "").strip() or None,
+        "contact_public": bool(note_data.contact_public),
+        "resolved": bool(note_data.resolved),
         "created_at": now.isoformat(),
         "expires_at": expires_at_iso
     }
@@ -653,6 +683,27 @@ async def create_street_note(note_data: StreetNoteCreate):
     note_doc.pop("_id", None)
 
     return {"success": True, "note": note_doc}
+
+@api_router.post("/street-notes/{note_id}/resolve")
+async def resolve_street_note(note_id: str, req: StreetNoteResolve):
+    """
+    Mark a Helping Hand post (e.g. lost pet/kid) as found/resolved. Only the
+    original author (matching owner_id) may toggle it; the post stays visible
+    with a "Found" badge until it expires.
+    """
+    note = await db.street_notes.find_one({"id": note_id}, {"_id": 0})
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    owner_id = note.get("owner_id")
+    if owner_id and req.owner_id != owner_id:
+        raise HTTPException(status_code=403, detail="Only the author can update this post")
+
+    await db.street_notes.update_one(
+        {"id": note_id},
+        {"$set": {"resolved": bool(req.resolved)}}
+    )
+    return {"success": True, "resolved": bool(req.resolved)}
 
 @api_router.delete("/admin/street-notes/{note_id}")
 async def delete_street_note(note_id: str):

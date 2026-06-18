@@ -6401,6 +6401,12 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
   background: #34c759;
   box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.22);
   flex-shrink: 0;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+/* Identity hidden (avatar off ⇒ location off): red status dot */
+.online-island.identity-hidden::before {
+  background: #ff3b30;
+  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.22);
 }
 .online-island .online-icon { color: #2563eb; }
 
@@ -6538,6 +6544,8 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
 .chip-low { background: rgba(47, 158, 68, 0.16); color: #2f9e44; }
 .chip-note { background: var(--ui-blue-soft); color: var(--ui-blue-text); }
 .chip-official { background: rgba(47, 158, 68, 0.16); color: #2f9e44; }
+.chip-helping { background: rgba(236, 72, 153, 0.16); color: #db2777; }
+.chip-found { background: rgba(34, 197, 94, 0.18); color: #16a34a; }
 .list-row-delete {
   background: transparent;
   border: none;
@@ -6722,4 +6730,267 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
   justify-content: center;
   text-decoration: none;
   text-align: center;
+}
+
+/* ── Helping Hand — fork chooser, contact, found badges ──────────────── */
+.fork-options {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.fork-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 18px 18px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--r-card, 24px);
+  background: var(--ui-surface-strong, #fff);
+  backdrop-filter: blur(var(--ctl-blur, 24px));
+  -webkit-backdrop-filter: blur(var(--ctl-blur, 24px));
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+.fork-option:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+.fork-option:active { transform: scale(0.99); }
+.fork-option-emoji {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.fork-option-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.fork-option-title { font-weight: 700; font-size: 1.05rem; color: var(--ui-text); }
+.fork-option-desc { font-weight: 400; font-size: 0.85rem; color: var(--ui-muted); line-height: 1.35; }
+.fork-option .action-arrow { font-size: 1.5rem; color: var(--ui-muted); flex-shrink: 0; }
+
+.note-found-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(34, 197, 94, 0.18);
+  color: #16a34a;
+  vertical-align: middle;
+}
+.note-resolve-btn {
+  background: rgba(34, 197, 94, 0.16);
+  color: #16a34a;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+}
+.note-resolve-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* Found ring + tick on map pins */
+.map-pin.is-found { --pin-accent: #22c55e; }
+.leaflet-marker-icon .map-pin-found {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #22c55e;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  /* counter the pin's -45deg rotation so the tick reads upright */
+  transform: rotate(45deg);
+  z-index: 2;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   DESKTOP LAYOUT (≥769px) — grouped control panel anchored top-left.
+   Phone layout is untouched (panel is display:none below this width).
+   ════════════════════════════════════════════════════════════════════════ */
+.desktop-controls { display: none; }
+.desktop-live { display: none; }
+
+@media (min-width: 769px) {
+  /* Keep the whole top overlay as a tidy fixed-width left column */
+  .map-overlay-top {
+    width: 360px;
+    max-width: calc(100% - 2.2rem);
+    gap: 12px;
+  }
+
+  /* The compact online pill is replaced by the full Live Updates banner */
+  .online-island-row { display: none; }
+
+  /* Desktop Live Updates ticker + chat button */
+  .desktop-live {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px;
+    border-radius: var(--r-card, 22px);
+    background: var(--ctl-fill);
+    -webkit-backdrop-filter: var(--ctl-blur);
+    backdrop-filter: var(--ctl-blur);
+    border: var(--ctl-border);
+    box-shadow: var(--ctl-shadow);
+  }
+  .dlu-label {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--ui-text);
+  }
+  .dlu-scroll-container {
+    overflow: hidden;
+    white-space: nowrap;
+    width: 100%;
+  }
+  .dlu-text {
+    display: inline-block;
+    white-space: nowrap;
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--ui-muted);
+  }
+  .dlu-chat-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    width: 100%;
+    border: none;
+    border-radius: 999px;
+    padding: 0.7rem 1rem;
+    background: rgba(20, 22, 38, 0.92);
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.12s ease;
+  }
+  .dlu-chat-btn:hover { transform: translateY(-1px); filter: brightness(1.1); }
+  .dlu-chat-btn:active { transform: scale(0.98); }
+  .dlu-people-icon { display: inline-flex; color: #8ab4ff; }
+  .dlu-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #34c759;
+    box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.25);
+    flex-shrink: 0;
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+  }
+  /* Identity hidden ⇒ red dot (mirrors the online pill behaviour) */
+  .dlu-chat-btn.identity-hidden .dlu-dot {
+    background: #ff3b30;
+    box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.25);
+  }
+
+  /* Reveal the grouped control panel */
+  .desktop-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border-radius: var(--r-card, 22px);
+    background: var(--ctl-fill);
+    -webkit-backdrop-filter: var(--ctl-blur);
+    backdrop-filter: var(--ctl-blur);
+    border: var(--ctl-border);
+    box-shadow: var(--ctl-shadow);
+  }
+
+  /* Map / List segmented toggle */
+  .dc-segment {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 999px;
+    background: var(--ui-blue-soft, rgba(37, 99, 235, 0.1));
+  }
+  .dc-seg-btn {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--ui-text);
+    font-size: 0.92rem;
+    font-weight: 600;
+    padding: 0.55rem 0.5rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .dc-seg-btn.active {
+    background: #2563eb;
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+  }
+
+  .dc-row { display: flex; gap: 8px; }
+
+  /* Filter ("All Reports") + Layers pills */
+  .dc-pill {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border: 1px solid var(--ui-border);
+    background: var(--ui-surface-strong, rgba(255,255,255,0.8));
+    color: var(--ui-text);
+    font-size: 0.88rem;
+    font-weight: 500;
+    padding: 0.6rem 0.7rem;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: transform 0.12s ease, border-color 0.12s ease;
+  }
+  .dc-pill:hover { transform: translateY(-1px); border-color: #2563eb; }
+  .dc-caret { font-size: 0.75rem; color: var(--ui-muted); }
+
+  /* Street Notes / Report Incident action buttons */
+  .dc-action {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border: none;
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 0.7rem 0.6rem;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.12s ease;
+  }
+  .dc-action:hover { transform: translateY(-1px); filter: brightness(1.05); }
+  .dc-action:active { transform: scale(0.98); }
+  .dc-action-icon { font-size: 1.05rem; line-height: 1; }
+  .dc-action-notes { background: linear-gradient(180deg, #2563eb, #1d4ed8); }
+  .dc-action-report { background: linear-gradient(180deg, #ef4444, #dc2626); }
+
+  /* The bottom-left floating pills are now redundant with the panel */
+  .map-tool-stack { display: none !important; }
+
+  /* Bring back the Street Highlights legend — desktop only, top-right */
+  .street-highlights-legend {
+    display: block !important;
+    margin: 0.6rem 0.6rem 0 0 !important;
+    border-radius: var(--r-card, 18px) !important;
+  }
+  /* On phones this corner is pinned to the bottom; restore true top-right on desktop */
+  body:has(#view-map.view-container.active) .leaflet-top.leaflet-right {
+    top: 0.7rem;
+    bottom: auto;
+    right: 0.7rem;
+  }
 }

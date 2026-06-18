@@ -8,6 +8,9 @@ A community-driven safety and awareness web app for Melbourne. Users can report 
 
 ## Recent improvements
 
+- Added the **Helping Hand** community mutual-aid flow (see [What the app does](#helping-hand--community-mutual-aid)) — lost pet/kid posts, plus sharing an umbrella, spare charger, or first aid.
+- Added a **desktop-specific layout** (≥769px) that keeps the mobile UI minimal while giving large screens more chrome — see [Responsive layout](#responsive-layout-mobile-vs-desktop).
+- Added a **presence indicator dot** on the online/chat control: **green** when your avatar + location are visible to others, **red** when you've hidden your avatar (which also turns location sharing off).
 - Improved the overall UI design with a more consistent Apple Maps-inspired frosted-glass system, larger touch-friendly controls, and better spacing hierarchy.
 - Redesigned key surfaces (map controls, list sheet, and chat presentation) to feel more unified and readable across mobile contexts.
 - Fixed dark-mode consistency issues where some surfaces and text could mismatch (especially in embedded third-party in-app browsers), so light/dark now switch coherently.
@@ -37,14 +40,57 @@ A community-driven safety and awareness web app for Melbourne. Users can report 
 
 - **Incidents** — Report protests, theft, harassment, anti-social behaviour, or other events with GPS, address search, or pin-drop. Optional description and photo (client-side compressed). Filter by category, urgency, and time (2h / 4h / 6h).
 - **Street notes** — Short community tips (fountain, toilet, coffee, food, parking, music, mood emojis, etc.) with optional image, duration (1 hour – 3 days), or “Keep forever”.
+- **Helping Hand** — Community mutual aid posts (see [below](#helping-hand--community-mutual-aid)).
 - **Official amenities** — City of Melbourne **drinking fountains** (~302) and **public toilets** (~74) as static reference layers. Toggle on from the map; off by default so the map stays uncluttered.
 - **Map + list views** — Interactive map with filterable list. List supports incidents, notes, and official POIs by category.
 - **Reactions** — 👍 / 👎 on incidents.
-- **Avatar & presence** — Choose an emoji avatar and display title; your marker appears on the map at GPS. Peer locations sync across devices via `/api/peers`.
+- **Avatar & presence** — Choose an emoji avatar and display title; your marker appears on the map at GPS. Peer locations sync across devices via `/api/peers`. The online/chat control shows a **presence dot** — **green** when your avatar + location are shared, **red** when your avatar is off (🚫), which also stops location sharing.
+- **Responsive layout** — Mobile stays deliberately minimal; desktop unlocks a richer layout (see [Responsive layout](#responsive-layout-mobile-vs-desktop)).
 - **Group chat** — Anonymous chat linked to the live-updates banner; messages auto-clear after 24 hours.
 - **Welcome notice** — Admin-editable popup on load.
 - **PWA** — Install to home screen; offline shell via service worker.
 - **Theming** — Light and dark mode via `prefers-color-scheme`, with frosted-glass map chrome in both.
+
+### Responsive layout (mobile vs desktop)
+
+The app is a single responsive frontend — the **same** `index.html` / `app.js` / `styles.css` runs everywhere, so every feature is available on both. The layout adapts at a **769px** breakpoint:
+
+- **Mobile (<769px)** — deliberately minimal: floating List / Filter / Layers pills (bottom-left), the compact online pill, and the `+` action button. Nothing extra.
+- **Desktop (≥769px)** — a tidy left-hand column adds:
+  - A **grouped control panel** anchored top-left: **Map / List** toggle, **All Reports** (filter), **Layers**, **Street Notes**, and **Report Incident** — all wired to the same handlers as mobile.
+  - A **Live Updates** ticker plus a full **"N people active on the map, tap to chat"** button (carrying the same green/red presence dot).
+  - The **Street Highlights legend** in the **top-right** corner.
+
+  The redundant mobile pills and compact online pill are hidden on desktop. The mobile experience is untouched (all desktop-only chrome lives inside a `@media (min-width: 769px)` block).
+
+### Helping Hand — community mutual aid
+
+A third posting flow that sits **parallel to "Report Incident" and "Share Discovery."** Tapping the **+** button and choosing **Share Discovery** opens a fork screen:
+
+- **📝 Leave a Street Note** — the classic short-lived community tip.
+- **🖐 Need a Helping Hand** — ask the community for help or share something.
+
+Helping Hand posts reuse the Street Note experience (optional photo, optional description, the same **"how long should this last"** duration slider, default **12 hours**) and ride under the existing **Discoveries** map layer.
+
+**Categories:** 🐶 Dog · 🐱 Cat · 🐾 Lost Pet · 👩‍👦 Lost Kid · ☔ Umbrella · 🔋 Spare Charger · 🩹 First Aid.
+
+**Contact & privacy**
+- In-app **community chat is the default** contact channel.
+- The author chooses whether they can be reached at all ("Let people reach me").
+- Phone/email exposure is **opt-in** — leave them blank to be reached via chat only. Personal contact fields are stripped server-side from the public feed unless the author opted in.
+
+**Lost pet / lost kid status**
+- Only the **original poster** can mark a post **"Found."**
+- A resolved post stays on the map with a green **Found ✓** badge (and green pin) until its duration expires.
+- Otherwise the post simply expires on its timer like any other note.
+
+**Data model:** Helping Hand posts are stored in the existing `street_notes` collection with a `kind: "helping_hand"` discriminator, plus `owner_id`, `contact_name`, `contact_phone`, `contact_email`, `contact_public`, and `resolved`. A `POST /api/street-notes/{id}/resolve` endpoint toggles the found status (owner-verified).
+
+> **Planned (deferred) — 000 safety banner.** For **Lost Kid** (and possibly **Lost Pet**) posts we plan to surface a prominent safety banner so the post never substitutes for emergency services:
+>
+> > ⚠️ If a child is missing right now, call 000 immediately. This post is only to help spread the word.
+>
+> This is intentionally **not implemented yet** and reserved for a future release.
 
 ### Admins (tap the **M** logo 10 times)
 

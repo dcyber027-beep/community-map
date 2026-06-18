@@ -104,6 +104,49 @@
               <span id="online-count-text">0 online</span>
             </button>
           </div>
+
+          <!-- Desktop-only Live Updates ticker + chat button (≥769px) -->
+          <div class="desktop-live" id="desktop-live-updates">
+            <div class="dlu-label">Live Updates</div>
+            <div class="dlu-scroll-container">
+              <span class="dlu-text" id="dlu-text"></span>
+            </div>
+            <button type="button" class="dlu-chat-btn" id="dlu-chat-btn" aria-label="Open community chat">
+              <span class="dlu-dot" aria-hidden="true"></span>
+              <span class="dlu-people-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M16 11a3 3 0 1 0-3-3 3 3 0 0 0 3 3zm-8 0a3 3 0 1 0-3-3 3 3 0 0 0 3 3zm0 2c-2.3 0-7 1.2-7 3.5V19h8v-2.5c0-.9.4-1.7 1-2.4A12 12 0 0 0 8 13zm8 0c-.3 0-.6 0-1 .1 1.3.9 2 2 2 3.4V19h6v-2.5c0-2.3-4.7-3.5-7-3.5z"/></svg>
+              </span>
+              <span id="dlu-count-text">0 people active on the map, tap to chat</span>
+            </button>
+          </div>
+
+          <!-- Desktop-only grouped control panel (≥769px). Hidden on phones. -->
+          <div class="desktop-controls" id="desktop-controls">
+            <div class="dc-segment">
+              <button type="button" class="dc-seg-btn active" id="dc-map">Map View</button>
+              <button type="button" class="dc-seg-btn" id="dc-list">List View</button>
+            </div>
+            <div class="dc-row">
+              <button type="button" class="dc-pill" id="dc-filter">
+                <span>All Reports</span>
+                <span class="dc-caret" aria-hidden="true">▾</span>
+              </button>
+              <button type="button" class="dc-pill" id="dc-layers">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                <span>Layers</span>
+              </button>
+            </div>
+            <div class="dc-row">
+              <button type="button" class="dc-action dc-action-notes" id="dc-notes">
+                <span class="dc-action-icon">📝</span>
+                <span>Street Notes</span>
+              </button>
+              <button type="button" class="dc-action dc-action-report" id="dc-report">
+                <span class="dc-action-icon">🚨</span>
+                <span>Report Incident</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Floating bottom-left tools — independent glass pills -->
@@ -539,11 +582,37 @@
           <button class="wizard-close-btn" id="street-note-close" type="button" aria-label="Close">&#215;</button>
         </div>
 
-        <!-- Step 1 — What to share? -->
-        <div class="wizard-body" id="discovery-step-1">
+        <!-- Step 0 — Fork: street note vs helping hand -->
+        <div class="wizard-body" id="discovery-fork">
           <div class="wizard-title-block">
-            <h2 class="wizard-title">Share a discovery</h2>
-            <p class="wizard-subtitle">Choose the type of place or thing you want to share.</p>
+            <h2 class="wizard-title">What would you like to do?</h2>
+            <p class="wizard-subtitle">Share a local tip, or ask the community for a hand.</p>
+          </div>
+          <div class="fork-options">
+            <button type="button" class="fork-option" id="fork-note">
+              <span class="fork-option-emoji">📝</span>
+              <span class="fork-option-text">
+                <span class="fork-option-title">Leave a Street Note</span>
+                <span class="fork-option-desc">Share a place, deal, or observation</span>
+              </span>
+              <span class="action-arrow" aria-hidden="true">›</span>
+            </button>
+            <button type="button" class="fork-option" id="fork-helping">
+              <span class="fork-option-emoji">🖐</span>
+              <span class="fork-option-text">
+                <span class="fork-option-title">Need a Helping Hand</span>
+                <span class="fork-option-desc">Lost pet or kid, or share an umbrella, charger, first aid</span>
+              </span>
+              <span class="action-arrow" aria-hidden="true">›</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 1 — What to share? -->
+        <div class="wizard-body" id="discovery-step-1" style="display:none">
+          <div class="wizard-title-block">
+            <h2 class="wizard-title" id="discovery-step1-title">Share a discovery</h2>
+            <p class="wizard-subtitle" id="discovery-step1-subtitle">Choose the type of place or thing you want to share.</p>
           </div>
           <div class="cat-grid" id="discovery-category-grid">
             <button type="button" class="cat-card" data-value="💧" data-label="Drinking Fountain">
@@ -583,6 +652,37 @@
               <span class="cat-label">Other</span>
             </button>
           </div>
+          <!-- Helping Hand categories (shown in helping mode) -->
+          <div class="cat-grid" id="helping-category-grid" style="display:none">
+            <button type="button" class="cat-card" data-value="🐶" data-label="Dog">
+              <span class="cat-emoji">🐶</span>
+              <span class="cat-label">Dog</span>
+            </button>
+            <button type="button" class="cat-card" data-value="🐱" data-label="Cat">
+              <span class="cat-emoji">🐱</span>
+              <span class="cat-label">Cat</span>
+            </button>
+            <button type="button" class="cat-card" data-value="🐾" data-label="Lost Pet">
+              <span class="cat-emoji">🐾</span>
+              <span class="cat-label">Lost Pet</span>
+            </button>
+            <button type="button" class="cat-card" data-value="👩‍👦" data-label="Lost Kid">
+              <span class="cat-emoji">👩‍👦</span>
+              <span class="cat-label">Lost Kid</span>
+            </button>
+            <button type="button" class="cat-card" data-value="☔" data-label="Umbrella">
+              <span class="cat-emoji">☔</span>
+              <span class="cat-label">Umbrella</span>
+            </button>
+            <button type="button" class="cat-card" data-value="🔋" data-label="Spare Charger">
+              <span class="cat-emoji">🔋</span>
+              <span class="cat-label">Spare Charger</span>
+            </button>
+            <button type="button" class="cat-card cat-card-wide" data-value="🩹" data-label="First Aid">
+              <span class="cat-emoji">🩹</span>
+              <span class="cat-label">First Aid</span>
+            </button>
+          </div>
         </div>
 
         <!-- Step 2 — Discovery Details -->
@@ -611,6 +711,22 @@
             <label class="wizard-label">Add a note <span class="opt-badge">optional</span></label>
             <textarea id="street-note-text" class="wizard-textarea" placeholder="e.g. Clean and good water pressure." maxlength="150" rows="3"></textarea>
             <div class="char-count"><span id="street-note-count">0</span>/150</div>
+          </div>
+          <div class="wizard-field" id="helping-contact-field" style="display:none">
+            <label class="forever-toggle" style="margin-top:0;">
+              <div class="forever-toggle-info">
+                <div class="forever-toggle-text">📨 Let people reach me</div>
+                <div class="forever-hint">People can message you in the community chat</div>
+              </div>
+              <input type="checkbox" id="helping-contact-public" class="forever-toggle-input" />
+              <span class="forever-toggle-switch" aria-hidden="true"></span>
+            </label>
+            <div id="helping-contact-details" style="display:none; margin-top:0.7rem;">
+              <input id="helping-contact-name" type="text" class="wizard-input" placeholder="Your name (optional)" maxlength="40" style="margin-bottom:0.5rem;" />
+              <input id="helping-contact-phone" type="tel" class="wizard-input" placeholder="Phone — shown publicly (optional)" maxlength="25" inputmode="tel" style="margin-bottom:0.5rem;" />
+              <input id="helping-contact-email" type="email" class="wizard-input" placeholder="Email — shown publicly (optional)" maxlength="60" />
+              <p class="wizard-map-hint" style="margin-top:0.4rem;">Leave phone/email blank to be reached via community chat only.</p>
+            </div>
           </div>
           <div class="wizard-field">
             <label class="wizard-label">⏳ How long should this last?</label>
