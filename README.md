@@ -6,6 +6,12 @@ A community-driven safety and awareness web app for Melbourne. Users can report 
 
 **Tagline:** *see it, post it, sort it*
 
+## Recent improvements
+
+- Improved the overall UI design with a more consistent Apple Maps-inspired frosted-glass system, larger touch-friendly controls, and better spacing hierarchy.
+- Redesigned key surfaces (map controls, list sheet, and chat presentation) to feel more unified and readable across mobile contexts.
+- Fixed dark-mode consistency issues where some surfaces and text could mismatch (especially in embedded third-party in-app browsers), so light/dark now switch coherently.
+
 ---
 
 ## Table of contents

@@ -6340,6 +6340,15 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
   --ctl-shadow: 0 12px 32px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Keep floating controls in one coherent dark glass language */
+    --ctl-fill: rgba(10, 16, 28, 0.62);
+    --ctl-border: 1px solid rgba(255, 255, 255, 0.22);
+    --ctl-shadow: 0 14px 34px rgba(0, 0, 0, 0.48), 0 2px 10px rgba(0, 0, 0, 0.3);
+  }
+}
+
 /* High-quality, slightly larger emoji everywhere they appear */
 .list-row-icon, .map-pin-emoji, .cat-emoji, .action-icon, .layer-icon,
 .mhc-avatar, .review-row-icon, .emoji-shortcut-emoji, .online-icon,
@@ -6362,7 +6371,7 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
   border-radius: var(--r-pill);
   font-size: 1rem;
   font-weight: 500;
-  color: #1f2937;
+  color: var(--ui-text);
   background: var(--ctl-fill);
   -webkit-backdrop-filter: var(--ctl-blur);
   backdrop-filter: var(--ctl-blur);
@@ -6400,7 +6409,7 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
   gap: 1rem;
   padding: 1rem 1.15rem;
   border-radius: var(--r-card);
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--ctl-fill);
   -webkit-backdrop-filter: var(--ctl-blur);
   backdrop-filter: var(--ctl-blur);
   border: var(--ctl-border);
@@ -6455,7 +6464,7 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
   backdrop-filter: var(--ctl-blur);
   border: var(--ctl-border);
   box-shadow: var(--ctl-shadow);
-  color: #3b4452;
+  color: var(--ui-text);
 }
 .locate-fab svg { width: 24px; height: 24px; }
 
