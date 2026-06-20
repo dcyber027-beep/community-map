@@ -1,4 +1,4 @@
-const CACHE_NAME = 'community-map-v33';
+const CACHE_NAME = 'community-map-v34';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -37,42 +37,55 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
 
-  // For API calls and non-GET requests, always go to network
-  if (request.method !== 'GET' || request.url.includes('/api/')) {
+  // Only ever handle GET requests.
+  if (request.method !== 'GET') return;
+
+  let url;
+  try {
+    url = new URL(request.url);
+  } catch (e) {
     return;
   }
 
-  // For navigation requests, try network first, fall back to cache
+  // CRITICAL: never intercept cross-origin requests.
+  // Map tiles (CARTO/OSM), CDN scripts/fonts (unpkg, Google Fonts) and the
+  // geocoding API return opaque (no-cors) responses. The browser stores those
+  // in Cache Storage with large fixed "padding" (each tile counts as several
+  // MB toward the origin quota). Caching every tile as the user pans fills the
+  // mobile storage quota within seconds, thrashing disk I/O and getting the
+  // tab throttled/killed — which looks like the page "working for a second
+  // then freezing". Desktop/localhost has a huge quota so it never shows.
+  // Let the browser's normal HTTP cache handle all cross-origin assets.
+  if (url.origin !== self.location.origin) return;
+
+  // Never cache backend API calls.
+  if (url.pathname.includes('/api/')) return;
+
+  // Navigation requests: network-first, fall back to cached shell when offline.
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then((response) => {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)).catch(() => {});
           return response;
         })
-        .catch(() => caches.match(request))
+        .catch(() => caches.match(request).then((c) => c || caches.match('/index.html')))
     );
     return;
   }
 
-  // For static assets, try cache first, fall back to network
+  // Same-origin static assets: cache-first, with a background refresh.
   event.respondWith(
     caches.match(request).then((cached) => {
-      if (cached) {
-        // Refresh cache in background
-        fetch(request)
-          .then((response) => {
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, response));
-          })
-          .catch(() => {});
-        return cached;
-      }
-      return fetch(request).then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        return response;
-      });
+      const network = fetch(request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)).catch(() => {});
+          return response;
+        })
+        .catch(() => cached);
+      return cached || network;
     })
   );
 });
