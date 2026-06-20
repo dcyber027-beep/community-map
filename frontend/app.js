@@ -5721,7 +5721,6 @@ async function waitForBackend() {
 // 5s when idle, pauses on interaction, supports vertical swipe. Works on phone
 // + desktop (the stack lives inside .map-overlay-top).
 // ─────────────────────────────────────────────────────────────────────────────
-const NOW_BAR_TUTORIAL_KEY = "tutorialCompleted";
 const NOW_BAR_TUTORIAL_URL = "https://youtu.be/dQw4w9WgXcQ?si=_MgJQLDMSsTmGcjb";
 const NOW_BAR_ROTATE_MS = 5000;   // auto-advance cadence when idle
 const NOW_BAR_RESUME_MS = 8000;   // idle window before auto-rotation resumes
@@ -5757,28 +5756,6 @@ const nowBar = {
   swiped: false,
   suppressClick: false,
 };
-
-function isTutorialCompleted() {
-  try {
-    if (localStorage.getItem(NOW_BAR_TUTORIAL_KEY) === "true") return true;
-  } catch {}
-  // Honour a server-provided profile flag when one is present.
-  try {
-    if (window.userProfile && window.userProfile.tutorialCompleted) return true;
-  } catch {}
-  return false;
-}
-
-function markTutorialCompleted() {
-  try { localStorage.setItem(NOW_BAR_TUTORIAL_KEY, "true"); } catch {}
-  // Mirror into the in-memory profile so other views can read it this session.
-  try {
-    if (!window.userProfile) window.userProfile = {};
-    window.userProfile.tutorialCompleted = true;
-  } catch {}
-  // Best-effort profile sync hook (no-op until a backend endpoint exists).
-  try { if (typeof persistTutorialState === "function") persistTutorialState(true); } catch {}
-}
 
 function nowBarOnlineCount() {
   const el = document.getElementById("online-count-text");
@@ -5816,19 +5793,60 @@ function nowBarZoomToHighlights() {
 }
 
 function nowBarOpenTutorial() {
-  try { window.open(NOW_BAR_TUTORIAL_URL, "_blank", "noopener"); } catch {}
-  // Watching/opening the tutorial counts as completion.
-  completeTutorial();
+  // Open via a transient anchor (target=_blank, rel=noopener noreferrer).
+  // This is the most compatible path across mobile in-app browsers
+  // (Instagram/Facebook WebViews), which mishandle window.open(..., "noopener")
+  // and can otherwise hijack or suspend the host page (leaving a grey/frozen map
+  // on return). No first-time tracking — the card is always present.
+  try {
+    const a = document.createElement("a");
+    a.href = NOW_BAR_TUTORIAL_URL;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (e) {
+    try { window.open(NOW_BAR_TUTORIAL_URL, "_blank"); } catch (e2) {}
+  }
 }
 
-// Called when the user watches, completes, or dismisses the tutorial.
-// The tutorial card stays in the rotation; we only record that it was opened.
-function completeTutorial() {
-  markTutorialCompleted();
+// Recover the Leaflet map after returning from an external link / bfcache.
+// Mobile browsers (and in-app WebViews) often restore the page with a stale
+// (grey/frozen) map; recomputing the size + nudging the view forces tiles to
+// reload. Safe to call repeatedly; retried a few times because layout may not
+// be settled the instant the page is shown again.
+function recoverMapView() {
+  const fix = function () {
+    try {
+      if (map && typeof map.invalidateSize === "function") {
+        map.invalidateSize(true);
+        // Force a tile re-request even if the container size is unchanged.
+        if (typeof map.getCenter === "function" && typeof map.setView === "function") {
+          map.setView(map.getCenter(), map.getZoom(), { animate: false });
+        }
+      }
+    } catch (e) {}
+    try { if (locationMap && typeof locationMap.invalidateSize === "function") locationMap.invalidateSize(true); } catch (e) {}
+  };
+  fix();
+  setTimeout(fix, 150);
+  setTimeout(fix, 450);
 }
 
-// Ordered card set. Tutorial-first for new users; Emergency-first (no tutorial)
-// once the tutorial has been completed/dismissed.
+// Independent viewport recovery so a stale map heals even if the Now Bar isn't
+// the trigger. Covers bfcache restores (pageshow.persisted), tab refocus, and
+// visibility changes — the exact paths hit when returning from the tutorial
+// video on mobile.
+function initViewportRecovery() {
+  window.addEventListener("pageshow", () => recoverMapView());
+  window.addEventListener("focus", () => recoverMapView());
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) recoverMapView();
+  });
+}
+
+// Fixed card set — the tutorial card is always present (last in the rotation).
 function nowBarCardConfigs() {
   const emergency = {
     type: "emergency",
@@ -6019,11 +6037,25 @@ function nowBarWireEvents() {
   window.addEventListener("pointerup", endSwipe);
   window.addEventListener("pointercancel", () => { nowBar.down = false; nowBarScheduleResume(); });
 
-  // Save battery while the tab is hidden.
+  // Pause while the tab is hidden, and ALWAYS recover when we come back.
+  // Opening an external link (e.g. the tutorial video) can swallow the
+  // pointerup/pointercancel, leaving a stuck `down` state; force-reset it on
+  // return so auto-rotation reliably resumes.
+  const nowBarResume = () => {
+    nowBar.down = false;
+    nowBar.swiped = false;
+    nowBar.suppressClick = false;
+    nowBarStartAuto();
+    // Returning from the tutorial link can leave a stale/grey map — repair it.
+    recoverMapView();
+  };
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) nowBarStopAuto();
-    else if (!nowBar.down) nowBarStartAuto();
+    else nowBarResume();
   });
+  // bfcache restores + tab refocus (covers browsers that skip visibilitychange).
+  window.addEventListener("pageshow", nowBarResume);
+  window.addEventListener("focus", nowBarResume);
 }
 
 function initNowBar() {
@@ -6052,6 +6084,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initStreetNoteModal();
   initDesktopControls();
   initNowBar();
+  initViewportRecovery();
   initPeerBroadcasting();
 
   await waitForBackend();
