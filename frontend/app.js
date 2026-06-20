@@ -5711,7 +5711,14 @@ async function waitForBackend() {
 
   if (msgEl) msgEl.textContent = 'Ready!';
   overlay.classList.add('fade-out');
-  setTimeout(() => { overlay.style.display = 'none'; }, 600);
+  setTimeout(() => {
+    overlay.style.display = 'none';
+    // Force Leaflet to recalculate the map container size and reload tiles now
+    // that the full-screen overlay is gone. Mobile browsers throttle tile
+    // loading for covered elements, so tiles may not have loaded during the
+    // cold-start wait — this ensures they appear the moment the overlay clears.
+    recoverMapView();
+  }, 600);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6088,6 +6095,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   initPeerBroadcasting();
 
   await waitForBackend();
+  // Ensure tiles are visible regardless of whether the cold-start overlay was
+  // shown. On mobile the map container can have a stale size after the overlay
+  // or after any async layout shift during startup.
+  recoverMapView();
 
   await fetchLiveUpdates();
 
