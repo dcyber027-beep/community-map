@@ -1,4 +1,4 @@
-const CACHE_NAME = 'community-map-v24';
+const CACHE_NAME = 'community-map-v28';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -7,6 +7,8 @@ const PRECACHE_URLS = [
   '/terms.html',
   '/styles.css',
   '/app.js',
+  '/sw-register.js',
+  '/vendor/purify.min.js',
   '/manifest.json',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png'

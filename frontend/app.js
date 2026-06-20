@@ -23,6 +23,84 @@ let userLocation = null;
 let adminLoginTemplate = "";
 let isAdminLoggedIn = false;
 
+// ── Security helpers ──────────────────────────────────────────────────────────
+// Escape user-supplied text before interpolating into template-string HTML.
+// Use this for ALL untrusted values that land in innerHTML / popup content.
+function escapeHtml(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Sanitize a URL for use in href/src attributes. Allows http(s), data:image,
+// mailto:, tel: only — blocks javascript: and other dangerous schemes.
+function safeUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const lowered = raw.toLowerCase();
+  if (
+    lowered.startsWith("https://") ||
+    lowered.startsWith("http://") ||
+    lowered.startsWith("data:image/") ||
+    lowered.startsWith("mailto:") ||
+    lowered.startsWith("tel:")
+  ) {
+    return escapeHtml(raw);
+  }
+  return "";
+}
+
+// Sanitize admin-authored rich HTML (welcome notice) before inserting into the
+// DOM. Falls back to text-only escaping if DOMPurify failed to load.
+function sanitizeRichHtml(html) {
+  if (window.DOMPurify && typeof window.DOMPurify.sanitize === "function") {
+    // Allow safe formatting markup + inline style attributes (the welcome notice
+    // is admin-authored and uses inline styling), but strip scripts, event
+    // handlers, and any element that could run code or hijack the page.
+    return window.DOMPurify.sanitize(String(html || ""), {
+      USE_PROFILES: { html: true },
+      FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form", "base", "link", "meta"],
+      ALLOW_DATA_ATTR: false,
+    });
+  }
+  return escapeHtml(html);
+}
+
+// ── Admin auth token (signed JWT from /admin/verify) ──────────────────────────
+const ADMIN_TOKEN_KEY = "communityMapAdminToken_v1";
+
+function getAdminToken() {
+  try { return sessionStorage.getItem(ADMIN_TOKEN_KEY) || ""; } catch { return ""; }
+}
+function setAdminToken(token) {
+  try {
+    if (token) sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+    else sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+  } catch {}
+}
+function clearAdminSession() {
+  setAdminToken("");
+  isAdminLoggedIn = false;
+}
+
+// fetch() wrapper that attaches the admin Bearer token and transparently
+// handles an expired/invalid session (401) by logging the admin out.
+async function adminFetch(url, options = {}) {
+  const token = getAdminToken();
+  const headers = Object.assign({}, options.headers || {});
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(url, Object.assign({}, options, { headers }));
+  if (res.status === 401) {
+    clearAdminSession();
+    throw new Error("Admin session expired. Please log in again.");
+  }
+  return res;
+}
+
 // ── Avatar / identity state ──────────────────────────────────────────────────
 const AVATAR_ANIMALS = ["🐶","🐱","🐺","🦊","🦝","🦁","🐯","🐷","🐭","🐰","🐼","🐻","🐨"];
 const ANIMAL_NAMES   = ["Doggo","Kitty","Wolf","Fox","Raccoon","Lion","Tiger","Piglet","Mouse","Bunny","Panda","Bear","Koala"];
@@ -250,7 +328,7 @@ function formatRemainingTime(expiresAt) {
 }
 
 async function deleteStreetNoteById(noteId) {
-  const res = await fetch(`${API_BASE}/admin/street-notes/${noteId}`, { method: "DELETE" });
+  const res = await adminFetch(`${API_BASE}/admin/street-notes/${noteId}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete street note");
 }
 
@@ -520,13 +598,13 @@ function formatToiletAmenities(toilet) {
 function buildToiletPopupHtml(toilet) {
   const amenities = formatToiletAmenities(toilet);
   const amenitiesHtml = amenities
-    ? `<div style="font-size: 0.8rem; color: var(--ui-muted); margin-bottom: 0.5rem;">${amenities}</div>`
+    ? `<div style="font-size: 0.8rem; color: var(--ui-muted); margin-bottom: 0.5rem;">${escapeHtml(amenities)}</div>`
     : "";
   return `
     <div style="max-width: 240px; padding: 0.25rem;">
-      <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${toilet.name}</div>
+      <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${escapeHtml(toilet.name)}</div>
       ${amenitiesHtml}
-      <div style="font-size: 0.75rem; color: var(--ui-muted);">Official · ${toilet.source || "City of Melbourne"}</div>
+      <div style="font-size: 0.75rem; color: var(--ui-muted);">Official · ${escapeHtml(toilet.source || "City of Melbourne")}</div>
     </div>
   `;
 }
@@ -664,11 +742,11 @@ function renderList() {
     row.type = "button";
     row.className = "list-row";
     row.innerHTML = `
-      <span class="list-row-icon">${note.emoji || '📝'}</span>
+      <span class="list-row-icon">${escapeHtml(note.emoji || '📝')}</span>
       <span class="list-row-main">
-        <span class="list-row-title">${cityReferenceListTitle(note)}</span>
-        <span class="list-row-sub">${note.text || locText}</span>
-        <span class="list-row-meta">${timeText}</span>
+        <span class="list-row-title">${escapeHtml(cityReferenceListTitle(note))}</span>
+        <span class="list-row-sub">${escapeHtml(note.text || locText)}</span>
+        <span class="list-row-meta">${escapeHtml(timeText)}</span>
       </span>
       <span class="list-row-end">
         ${chip}
@@ -683,12 +761,13 @@ function renderList() {
         setTimeout(() => {
           map.invalidateSize();
           if (note.isCityReference) {
-            const imageHtml = note.image_url
-              ? `<div style="margin-bottom:0.5rem"><img src="${note.image_url}" alt="Discovery photo" style="display:block;width:100%;max-width:220px;max-height:150px;object-fit:cover;border-radius:6px" /></div>` : "";
-            const metaHtml = `<div style="font-size:0.75rem;color:var(--ui-muted)">Official · ${note.source || "City of Melbourne"}</div>`;
+            const safeImg = safeUrl(note.image_url);
+            const imageHtml = safeImg
+              ? `<div style="margin-bottom:0.5rem"><img src="${safeImg}" alt="Discovery photo" style="display:block;width:100%;max-width:220px;max-height:150px;object-fit:cover;border-radius:6px" /></div>` : "";
+            const metaHtml = `<div style="font-size:0.75rem;color:var(--ui-muted)">Official · ${escapeHtml(note.source || "City of Melbourne")}</div>`;
             L.popup()
               .setLatLng([note.latitude, note.longitude])
-              .setContent(`<div style="max-width:240px;padding:0.25rem">${imageHtml}<div style="font-size:0.9375rem;line-height:1.5;margin-bottom:0.5rem">${note.text}</div>${metaHtml}</div>`)
+              .setContent(`<div style="max-width:240px;padding:0.25rem">${imageHtml}<div style="font-size:0.9375rem;line-height:1.5;margin-bottom:0.5rem">${escapeHtml(note.text)}</div>${metaHtml}</div>`)
               .openOn(map);
           } else {
             // Real discovery / Helping Hand note — use the rich popup so the
@@ -733,6 +812,10 @@ async function reactToIncident(incidentId, reaction) {
       body: JSON.stringify({ reaction }),
     });
     
+    if (res.status === 429) {
+      notifyIfRateLimited(res, 'reacting');
+      return;
+    }
     if (!res.ok) {
       throw new Error("Failed to react to incident");
     }
@@ -811,10 +894,11 @@ async function openDetailModal(incident) {
     ? `<div class="detail-card-confirmed"><span>👥</span> Confirmed by ${incident.cluster_count} similar reports nearby</div>` : '';
 
   const descHtml = incident.description
-    ? `<div class="detail-card-description">${incident.description}</div>` : '';
+    ? `<div class="detail-card-description">${escapeHtml(incident.description)}</div>` : '';
 
-  const photoHtml = incident.image_url
-    ? `<img class="detail-card-photo" src="${incident.image_url}" alt="Reported photo" />` : '';
+  const safeIncidentImg = safeUrl(incident.image_url);
+  const photoHtml = safeIncidentImg
+    ? `<img class="detail-card-photo" src="${safeIncidentImg}" alt="Reported photo" />` : '';
 
   const credHtml = `<div class="detail-card-confidence"><span>⚠️</span> ${urgencyLabel} Urgency · ${credibility} report</div>`;
 
@@ -849,6 +933,7 @@ async function openDetailModal(incident) {
           👎 Dislike
         </button>
       </div>
+      <button id="detail-report-btn" type="button" style="margin-top:0.6rem;background:none;border:none;color:var(--ui-muted,#888);font-size:0.78rem;cursor:pointer;text-decoration:underline;padding:0;">⚑ Report this report</button>
     </div>
   `;
 
@@ -887,6 +972,11 @@ async function openDetailModal(incident) {
       await reactToIncident(incident.id, "dislike");
       dislikeBtn.classList.add("active-reaction");
     });
+  }
+
+  const reportBtn = document.getElementById("detail-report-btn");
+  if (reportBtn) {
+    reportBtn.addEventListener("click", () => openReportModal("incident", incident.id));
   }
 
   const modal = document.getElementById("detail-modal");
@@ -943,6 +1033,10 @@ async function submitReport() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    if (res.status === 429) {
+      notifyIfRateLimited(res, 'reporting');
+      return;
+    }
     if (!res.ok) throw new Error("Failed to submit report");
     await fetchIncidents();
     closeReportModal();
@@ -951,6 +1045,7 @@ async function submitReport() {
   } catch (e) {
     console.error(e);
     alert("There was a problem submitting your report. Please try again.");
+  } finally {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit Report'; }
   }
 }
@@ -968,6 +1063,139 @@ function showToast(message, duration = 3000) {
   toast.style.opacity = '1';
   clearTimeout(toast._timer);
   toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, duration);
+}
+
+// If the response is a rate-limit (HTTP 429), show a friendly countdown toast
+// using the server's Retry-After header and return true. Otherwise return false.
+function notifyIfRateLimited(res, action) {
+  if (!res || res.status !== 429) return false;
+  const secs = parseInt(res.headers.get('Retry-After') || '', 10);
+  const wait = Number.isFinite(secs) && secs > 0 ? secs : 60;
+  const what = action ? `${action} ` : '';
+  showToast(`⏳ Too fast — please wait ${wait}s before ${what}again.`, 4000);
+  return true;
+}
+
+// ── Content reporting (moderation) ────────────────────────────────────────────
+// Reasons must match the backend's ALLOWED_REPORT_REASONS set.
+const REPORT_REASONS = [
+  ["spam", "🚫 Spam or scam"],
+  ["harassment", "😠 Harassment or bullying"],
+  ["violence", "⚠️ Violence or threats"],
+  ["sexual", "🔞 Sexual or explicit content"],
+  ["hate", "💢 Hate speech"],
+  ["personal_info", "🔓 Shares private personal info"],
+  ["misinformation", "❌ False or misleading"],
+  ["other", "❓ Something else"],
+];
+
+// Opens a lightweight modal letting a user flag a piece of content for review.
+// targetType: "incident" | "street_note" | "chat_message"
+function openReportModal(targetType, targetId) {
+  if (!targetId) return;
+  const existing = document.getElementById("report-content-overlay");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "report-content-overlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;padding:1rem;";
+
+  const card = document.createElement("div");
+  card.style.cssText = "background:var(--ui-bg,#fff);color:var(--ui-text,#111);max-width:360px;width:100%;border-radius:14px;padding:1.1rem;box-shadow:0 12px 40px rgba(0,0,0,0.35);max-height:90vh;overflow:auto;";
+
+  const heading = document.createElement("h3");
+  heading.textContent = "Report content";
+  heading.style.cssText = "margin:0 0 0.25rem;font-size:1.05rem;";
+  const sub = document.createElement("p");
+  sub.textContent = "Tell us what's wrong. Our moderators will review it.";
+  sub.style.cssText = "margin:0 0 0.75rem;font-size:0.8rem;color:var(--ui-muted,#666);";
+  card.appendChild(heading);
+  card.appendChild(sub);
+
+  let selectedReason = null;
+  const reasonsWrap = document.createElement("div");
+  reasonsWrap.style.cssText = "display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.75rem;";
+
+  const submitBtn = document.createElement("button");
+
+  REPORT_REASONS.forEach(([val, label]) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.style.cssText = "text-align:left;padding:0.55rem 0.7rem;border:1px solid var(--ui-border,#ddd);border-radius:8px;background:transparent;color:inherit;font-size:0.85rem;cursor:pointer;";
+    b.addEventListener("click", () => {
+      selectedReason = val;
+      reasonsWrap.querySelectorAll("button").forEach((x) => {
+        x.style.background = "transparent";
+        x.style.borderColor = "var(--ui-border,#ddd)";
+      });
+      b.style.background = "rgba(59,130,246,0.15)";
+      b.style.borderColor = "#3b82f6";
+      submitBtn.disabled = false;
+    });
+    reasonsWrap.appendChild(b);
+  });
+  card.appendChild(reasonsWrap);
+
+  const details = document.createElement("textarea");
+  details.placeholder = "Optional details (max 500 characters)";
+  details.maxLength = 500;
+  details.style.cssText = "width:100%;box-sizing:border-box;min-height:54px;border:1px solid var(--ui-border,#ddd);border-radius:8px;padding:0.5rem;font-size:0.85rem;resize:vertical;background:transparent;color:inherit;margin-bottom:0.75rem;";
+  card.appendChild(details);
+
+  const actions = document.createElement("div");
+  actions.style.cssText = "display:flex;gap:0.5rem;justify-content:flex-end;";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.style.cssText = "padding:0.5rem 0.9rem;border:1px solid var(--ui-border,#ddd);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font-size:0.85rem;";
+  submitBtn.type = "button";
+  submitBtn.textContent = "Submit report";
+  submitBtn.disabled = true;
+  submitBtn.style.cssText = "padding:0.5rem 0.9rem;border:none;border-radius:8px;background:#dc2626;color:#fff;cursor:pointer;font-size:0.85rem;font-weight:600;";
+  actions.appendChild(cancelBtn);
+  actions.appendChild(submitBtn);
+  card.appendChild(actions);
+
+  const close = () => overlay.remove();
+  cancelBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+  submitBtn.addEventListener("click", async () => {
+    if (!selectedReason) return;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Submitting…";
+    try {
+      const res = await fetch(`${API_BASE}/reports`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_type: targetType,
+          target_id: targetId,
+          reason: selectedReason,
+          details: details.value.trim(),
+        }),
+      });
+      if (res.status === 429) {
+        notifyIfRateLimited(res, "reporting");
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Submit report";
+        return;
+      }
+      if (!res.ok) throw new Error("failed");
+      close();
+      showToast("🚩 Thanks — our moderators will review this.");
+    } catch (e) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Submit report";
+      showToast("Could not submit report. Please try again.");
+    }
+  });
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
 }
 
 function getActiveChipValue(containerId) {
@@ -1114,7 +1342,7 @@ function buildReportReviewCard() {
     <div class="review-row">
       <span class="review-row-icon">📝</span>
       <span class="review-row-label">Description</span>
-      <span style="font-size:0.8rem">${reportWizardData.description.substring(0, 80)}${reportWizardData.description.length > 80 ? '…' : ''}</span>
+      <span style="font-size:0.8rem">${escapeHtml(reportWizardData.description.substring(0, 80))}${reportWizardData.description.length > 80 ? '…' : ''}</span>
     </div>` : ''}
     <div class="review-row">
       <span class="review-row-icon">🔒</span>
@@ -1143,6 +1371,7 @@ async function geocodeAddress() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ address: query }),
     });
+    if (notifyIfRateLimited(res, 'searching')) return;
     const data = await res.json();
     if (data.success && data.locations && data.locations.length > 0) {
       const loc = data.locations[0];
@@ -1505,15 +1734,28 @@ async function verifyAdmin(account, pin) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ account, pin }),
   });
+  if (res.status === 429) {
+    const secs = parseInt(res.headers.get('Retry-After') || '', 10);
+    const wait = Number.isFinite(secs) && secs > 0 ? secs : 60;
+    const err = new Error(`Too many attempts. Please wait ${wait}s and try again.`);
+    err.isRateLimit = true;
+    throw err;
+  }
   if (!res.ok) {
     throw new Error("Invalid admin credentials");
   }
-  return res.json();
+  const data = await res.json();
+  if (data && data.token) {
+    setAdminToken(data.token);
+  } else {
+    throw new Error("Admin token missing from server response");
+  }
+  return data;
 }
 
 async function loadAdminIncidents() {
   try {
-    const res = await fetch(`${API_BASE}/admin/incidents`);
+    const res = await adminFetch(`${API_BASE}/admin/incidents`);
     if (!res.ok) {
       const errorText = await res.text();
       console.error(`Failed to load admin incidents: ${res.status} ${res.statusText}`, errorText);
@@ -1527,14 +1769,14 @@ async function loadAdminIncidents() {
 }
 
 async function deleteIncident(id) {
-  const res = await fetch(`${API_BASE}/admin/incidents/${id}`, {
+  const res = await adminFetch(`${API_BASE}/admin/incidents/${id}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error("Failed to delete incident");
 }
 
 async function updateIncident(id, updateData) {
-  const res = await fetch(`${API_BASE}/admin/incidents/${id}`, {
+  const res = await adminFetch(`${API_BASE}/admin/incidents/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updateData),
@@ -1544,7 +1786,7 @@ async function updateIncident(id, updateData) {
 }
 
 async function updateLiveUpdates(content) {
-  const res = await fetch(`${API_BASE}/admin/live-updates`, {
+  const res = await adminFetch(`${API_BASE}/admin/live-updates`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
@@ -1664,6 +1906,137 @@ function showEditLiveUpdatesModal() {
   document.body.appendChild(modalOverlay);
 }
 
+const REPORT_REASON_LABELS = Object.fromEntries(REPORT_REASONS);
+const REPORT_TYPE_LABELS = {
+  incident: "Incident",
+  street_note: "Street note",
+  chat_message: "Chat message",
+};
+
+// Renders the admin moderation queue: open reports with a content preview and
+// Dismiss / Hide / Unhide / Delete actions.
+async function renderAdminModerationSection(dashboard) {
+  const section = document.createElement("div");
+  section.className = "admin-section admin-moderation-section";
+  section.style.cssText = "margin:0.5rem 0 1rem;";
+
+  const heading = document.createElement("h2");
+  heading.className = "admin-section-title";
+  heading.textContent = "🚩 Reported content";
+  heading.style.cssText = "font-size:1rem;margin:0 0 0.5rem;";
+  section.appendChild(heading);
+
+  const list = document.createElement("div");
+  list.innerHTML = "<div class='admin-loading'>Loading reports…</div>";
+  section.appendChild(list);
+  dashboard.appendChild(section);
+
+  try {
+    const res = await adminFetch(`${API_BASE}/admin/reports?status=open`);
+    if (!res.ok) throw new Error("Failed to load reports");
+    const data = await res.json();
+    const reports = data.reports || [];
+    heading.textContent = `🚩 Reported content (${data.open_count || 0})`;
+    list.innerHTML = "";
+    if (!reports.length) {
+      const empty = document.createElement("div");
+      empty.className = "admin-empty";
+      empty.textContent = "No open reports.";
+      list.appendChild(empty);
+      return;
+    }
+    reports.forEach((r) => list.appendChild(buildModerationCard(r)));
+  } catch (e) {
+    list.innerHTML = "";
+    const err = document.createElement("div");
+    err.className = "error-text";
+    err.textContent = e.message || "Could not load reports.";
+    list.appendChild(err);
+  }
+}
+
+function buildModerationCard(report) {
+  const card = document.createElement("article");
+  card.className = "admin-moderation-card";
+  card.style.cssText = "border:1px solid var(--ui-border,#e5e7eb);border-radius:10px;padding:0.75rem;margin-bottom:0.6rem;";
+
+  const target = report.target || {};
+
+  const head = document.createElement("div");
+  head.style.cssText = "display:flex;justify-content:space-between;gap:0.5rem;align-items:baseline;margin-bottom:0.35rem;flex-wrap:wrap;";
+  const left = document.createElement("div");
+  left.style.cssText = "font-weight:600;font-size:0.85rem;";
+  const reasonLabel = REPORT_REASON_LABELS[report.reason] || report.reason;
+  left.textContent = `${REPORT_TYPE_LABELS[report.target_type] || report.target_type} · ${reasonLabel}`;
+  const when = document.createElement("div");
+  when.style.cssText = "font-size:0.72rem;color:var(--ui-muted,#888);";
+  when.textContent = humanTimeAgo(report.created_at);
+  head.appendChild(left);
+  head.appendChild(when);
+  card.appendChild(head);
+
+  // Content preview — textContent only, so reported content can never execute.
+  const preview = document.createElement("div");
+  preview.style.cssText = "font-size:0.82rem;color:var(--ui-text);background:rgba(127,127,127,0.12);border-radius:6px;padding:0.5rem;margin-bottom:0.4rem;white-space:pre-wrap;word-break:break-word;";
+  if (target.exists === false) {
+    preview.textContent = "(content already deleted)";
+    preview.style.fontStyle = "italic";
+  } else {
+    let text = target.text || "(no text)";
+    if (target.author) text += `\n— ${target.author}`;
+    if (target.hidden) text += "\n[currently hidden]";
+    preview.textContent = text;
+  }
+  card.appendChild(preview);
+
+  if (report.details) {
+    const det = document.createElement("div");
+    det.style.cssText = "font-size:0.75rem;color:var(--ui-muted,#888);margin-bottom:0.4rem;";
+    det.textContent = `Reporter note: ${report.details}`;
+    card.appendChild(det);
+  }
+
+  const actions = document.createElement("div");
+  actions.style.cssText = "display:flex;gap:0.4rem;flex-wrap:wrap;";
+  const mkBtn = (label, bg, action) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.style.cssText = `padding:0.35rem 0.7rem;border:none;border-radius:6px;cursor:pointer;font-size:0.78rem;color:#fff;background:${bg};`;
+    b.addEventListener("click", () => actionReport(report.id, action, card));
+    return b;
+  };
+  actions.appendChild(mkBtn("Dismiss", "#6b7280", "dismiss"));
+  if (target.exists !== false) {
+    if (target.hidden) actions.appendChild(mkBtn("Unhide", "#0ea5e9", "unhide"));
+    else actions.appendChild(mkBtn("Hide", "#f59e0b", "hide"));
+    actions.appendChild(mkBtn("Delete", "#dc2626", "delete"));
+  }
+  card.appendChild(actions);
+  return card;
+}
+
+async function actionReport(reportId, action, card) {
+  if (action === "delete" && !confirm("Permanently delete this content?")) return;
+  try {
+    const res = await adminFetch(`${API_BASE}/admin/reports/${reportId}/action`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    if (!res.ok) throw new Error("Action failed");
+    if (card && card.parentNode) card.remove();
+    showToast("✅ Report resolved");
+    // Refresh public views so hidden/deleted content disappears immediately.
+    if (action === "hide" || action === "unhide" || action === "delete") {
+      if (typeof fetchIncidents === "function") fetchIncidents();
+      if (typeof fetchStreetNotes === "function") fetchStreetNotes();
+    }
+  } catch (e) {
+    showToast("Could not apply action. Please try again.");
+  }
+}
+
 async function renderAdminDashboard() {
   const adminBody = document.getElementById("admin-body");
   adminBody.innerHTML = "<div class='admin-loading'>Loading incidents…</div>";
@@ -1750,6 +2123,9 @@ async function renderAdminDashboard() {
     header.appendChild(headerLeft);
     header.appendChild(headerRight);
     dashboard.appendChild(header);
+
+    // Moderation queue (reported content) sits at the top so it's seen first.
+    await renderAdminModerationSection(dashboard);
     
     // Add Street Highlights section
     await renderAdminStreetHighlightsSection(dashboard);
@@ -1792,13 +2168,15 @@ async function renderAdminDashboard() {
       <div class='error-text'>
         <p>Unable to load incidents for admin.</p>
         <p style="font-size: 0.875rem; color: var(--ui-muted); margin-top: 0.5rem;">
-          ${e.message || "Please check your backend server is running."}
+          ${escapeHtml(e.message || "Please check your backend server is running.")}
         </p>
-        <button onclick="location.reload()" style="margin-top: 1rem; padding: 0.5rem 1rem; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer;">
+        <button type="button" id="admin-dashboard-retry" style="margin-top: 1rem; padding: 0.5rem 1rem; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer;">
           Retry
         </button>
       </div>
     `;
+    const retryBtn = document.getElementById("admin-dashboard-retry");
+    if (retryBtn) retryBtn.addEventListener("click", () => location.reload());
   }
 }
 
@@ -1898,8 +2276,8 @@ function createAdminReportCard(inc) {
   const contactInfo = document.createElement("div");
   contactInfo.className = "admin-contact-info";
   contactInfo.innerHTML = `
-    <div><strong>Email:</strong> ${inc.contact_email || "—"}</div>
-    <div><strong>Phone:</strong> ${inc.contact_phone || "—"}</div>
+    <div><strong>Email:</strong> ${inc.contact_email ? escapeHtml(inc.contact_email) : "—"}</div>
+    <div><strong>Phone:</strong> ${inc.contact_phone ? escapeHtml(inc.contact_phone) : "—"}</div>
   `;
 
   contactToggle.addEventListener("click", () => {
@@ -1980,14 +2358,14 @@ async function renderAdminStreetHighlightsSection(dashboard) {
           "green": "🟢 Green - Low concern"
         };
         
-        // Escape description for HTML attribute
-        const escapedDescription = (highlight.description || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        // Escape description for HTML attribute / body context
+        const escapedDescription = escapeHtml(highlight.description || '');
         
         highlightCard.innerHTML = `
           <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
             <div>
-              <div style="font-weight: 600; color: var(--ui-text); margin-bottom: 0.25rem;">${reasonLabels[highlight.reason] || highlight.reason}</div>
-              <div style="font-size: 0.875rem; color: var(--ui-muted);">${colorLabels[highlight.color] || highlight.color}</div>
+              <div style="font-weight: 600; color: var(--ui-text); margin-bottom: 0.25rem;">${escapeHtml(reasonLabels[highlight.reason] || highlight.reason)}</div>
+              <div style="font-size: 0.875rem; color: var(--ui-muted);">${escapeHtml(colorLabels[highlight.color] || highlight.color)}</div>
             </div>
             <div style="display: flex; gap: 0.5rem;">
               <button class="admin-edit-highlight-btn" data-id="${highlight.id}" data-color="${highlight.color || 'yellow'}" data-reason="${highlight.reason || 'other'}" data-description="${escapedDescription}" style="background: #3b82f6; color: white; border: none; border-radius: 6px; padding: 0.375rem 0.75rem; font-size: 0.75rem; cursor: pointer; font-weight: 500;">
@@ -1998,7 +2376,7 @@ async function renderAdminStreetHighlightsSection(dashboard) {
               </button>
             </div>
           </div>
-          ${highlight.description ? `<div style="font-size: 0.875rem; color: var(--ui-soft); margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--ui-border);">${highlight.description}</div>` : ''}
+          ${highlight.description ? `<div style="font-size: 0.875rem; color: var(--ui-soft); margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--ui-border);">${escapedDescription}</div>` : ''}
           <div style="font-size: 0.75rem; color: var(--ui-muted); margin-top: 0.5rem;">
             Created: ${new Date(highlight.created_at).toLocaleString()}
           </div>
@@ -2026,7 +2404,7 @@ async function renderAdminStreetHighlightsSection(dashboard) {
         btn.addEventListener("click", async () => {
           if (confirm("Are you sure you want to delete this street highlight?")) {
             try {
-              const response = await fetch(`${API_BASE}/admin/street-highlights/${btn.dataset.id}`, {
+              const response = await adminFetch(`${API_BASE}/admin/street-highlights/${btn.dataset.id}`, {
                 method: "DELETE"
               });
               if (response.ok) {
@@ -2093,12 +2471,13 @@ async function renderAdminStreetNotesSection(dashboard) {
     notes.forEach((note) => {
       const isForeverN = note.forever || !note.expires_at;
       const expText = isForeverN ? "Permanent" : formatRemainingTime(note.expires_at);
-      const emojiIcon = note.emoji || "📝";
-      const imgHtml = note.image_url
-        ? `<img src="${note.image_url}" style="max-width:120px;max-height:80px;object-fit:cover;border-radius:6px;margin-top:0.5rem;border:1px solid var(--ui-border);" />`
+      const emojiIcon = escapeHtml(note.emoji || "📝");
+      const safeAdminNoteImg = safeUrl(note.image_url);
+      const imgHtml = safeAdminNoteImg
+        ? `<img src="${safeAdminNoteImg}" style="max-width:120px;max-height:80px;object-fit:cover;border-radius:6px;margin-top:0.5rem;border:1px solid var(--ui-border);" />`
         : "";
       const locHtml = note.location_text
-        ? `<div style="font-size:0.75rem;color:var(--ui-muted);">📍 ${note.location_text}</div>`
+        ? `<div style="font-size:0.75rem;color:var(--ui-muted);">📍 ${escapeHtml(note.location_text)}</div>`
         : "";
       const badge = isForeverN ? '<span class="note-permanent-badge">PERMANENT</span>' : '';
 
@@ -2112,7 +2491,7 @@ async function renderAdminStreetNotesSection(dashboard) {
               <strong style="font-size:0.9rem;color:var(--ui-text);">Discovery</strong>
               ${badge}
             </div>
-            <div style="font-size:0.875rem;color:var(--ui-soft);margin-bottom:0.25rem;">${note.text}</div>
+            <div style="font-size:0.875rem;color:var(--ui-soft);margin-bottom:0.25rem;">${escapeHtml(note.text)}</div>
             ${locHtml}
             <div style="font-size:0.7rem;color:var(--ui-muted);margin-top:0.25rem;">${humanTimeAgo(note.created_at)} • ${expText}</div>
             ${imgHtml}
@@ -2242,7 +2621,7 @@ function setupAdminLoginForm() {
       renderList();
       renderStreetNotes();
     } catch (err) {
-      errorEl.textContent = "Invalid account or PIN.";
+      errorEl.textContent = err && err.isRateLimit ? err.message : "Invalid account or PIN.";
     }
   });
 }
@@ -2335,15 +2714,17 @@ function renderPeerMarkers() {
   Object.values(store).forEach(peer => {
     if (now - peer.ts > PEER_TTL_MS) return; // stale fallback guard
     const isMe = peer.id === myId;
+    const safeTitle = escapeHtml(peer.title);
+    const safeEmoji = escapeHtml(peer.emoji);
     const icon = L.divIcon({
-      html: `<div class="peer-emoji-marker${isMe ? " peer-self" : ""}" title="${peer.title}">${peer.emoji}</div>`,
+      html: `<div class="peer-emoji-marker${isMe ? " peer-self" : ""}" title="${safeTitle}">${safeEmoji}</div>`,
       className: "",
       iconSize: [40, 40],
       iconAnchor: [20, 20],
     });
     const marker = L.marker([peer.lat, peer.lng], { icon, zIndexOffset: isMe ? 1000 : 500 });
-    const label = isMe ? `${peer.title} <span class="peer-popup-you">(you)</span>` : peer.title;
-    marker.bindPopup(`<div class="peer-popup"><span class="peer-popup-emoji">${peer.emoji}</span><strong>${label}</strong></div>`, { maxWidth: 180 });
+    const label = isMe ? `${safeTitle} <span class="peer-popup-you">(you)</span>` : safeTitle;
+    marker.bindPopup(`<div class="peer-popup"><span class="peer-popup-emoji">${safeEmoji}</span><strong>${label}</strong></div>`, { maxWidth: 180 });
     peerLayer.addLayer(marker);
   });
 }
@@ -2642,8 +3023,8 @@ function showHighlightDescription(highlight) {
     .setLatLng([midLat, midLng])
     .setContent(`
       <div style="padding: 0.5rem; max-width: 280px;">
-        <div style="font-weight: 600; margin-bottom: 0.5rem; color: var(--ui-text);">${reasonText}</div>
-        <div style="font-size: 0.875rem; color: var(--ui-soft); line-height: 1.5;">${description}</div>
+        <div style="font-weight: 600; margin-bottom: 0.5rem; color: var(--ui-text);">${escapeHtml(reasonText)}</div>
+        <div style="font-size: 0.875rem; color: var(--ui-soft); line-height: 1.5;">${escapeHtml(description)}</div>
         <div style="font-size: 0.75rem; color: var(--ui-muted); margin-top: 0.5rem;">
           Highlighted by admin
         </div>
@@ -2893,8 +3274,8 @@ function renderCityDrinkingFountains() {
     const marker = L.marker([fountain.lat, fountain.lng], { icon });
     marker.bindPopup(`
       <div style="max-width: 240px; padding: 0.25rem;">
-        <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${fountain.description}</div>
-        <div style="font-size: 0.75rem; color: var(--ui-muted);">Official · ${fountain.source || "City of Melbourne"}</div>
+        <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${escapeHtml(fountain.description)}</div>
+        <div style="font-size: 0.75rem; color: var(--ui-muted);">Official · ${escapeHtml(fountain.source || "City of Melbourne")}</div>
       </div>
     `);
     cityFountainsLayer.addLayer(marker);
@@ -2941,14 +3322,18 @@ function buildStreetNotePopupHtml(note) {
   const isForever = note.forever || !note.expires_at;
   const expiryText = isForever ? "Permanent" : formatRemainingTime(note.expires_at);
   const permBadge = isForever ? '<span class="note-permanent-badge">PERMANENT</span>' : '';
-  const imageHtml = note.image_url
-    ? `<div style="margin-bottom: 0.5rem;"><img src="${note.image_url}" alt="Street note image" style="display:block; width:100%; max-width:200px; max-height:140px; object-fit:cover; border-radius: 6px; border: 1px solid var(--ui-border);" /></div>`
+  const safeNoteImg = safeUrl(note.image_url);
+  const imageHtml = safeNoteImg
+    ? `<div style="margin-bottom: 0.5rem;"><img src="${safeNoteImg}" alt="Street note image" style="display:block; width:100%; max-width:200px; max-height:140px; object-fit:cover; border-radius: 6px; border: 1px solid var(--ui-border);" /></div>`
     : "";
   const locationHtml = note.location_text
-    ? `<div style="font-size: 0.75rem; color: var(--ui-muted); margin-bottom: 0.5rem;">📍 ${note.location_text}</div>`
+    ? `<div style="font-size: 0.75rem; color: var(--ui-muted); margin-bottom: 0.5rem;">📍 ${escapeHtml(note.location_text)}</div>`
     : "";
   const adminDeleteHtml = (isAdminLoggedIn && !note.isCityReference)
     ? `<div style="margin-top: 0.5rem;"><button type="button" class="note-admin-delete" data-note-id="${note.id}">🗑️ Delete note</button></div>`
+    : "";
+  const reportHtml = !note.isCityReference
+    ? `<div style="margin-top:0.4rem;"><button type="button" class="note-report-btn" data-note-id="${note.id}" style="background:transparent;border:none;color:var(--ui-muted,#888);font-size:0.72rem;cursor:pointer;padding:0;text-decoration:underline;">⚑ Report this note</button></div>`
     : "";
 
   let helpingHeaderHtml = "";
@@ -2956,14 +3341,14 @@ function buildStreetNotePopupHtml(note) {
   let foundBadgeHtml = "";
   let resolveBtnHtml = "";
   if (isHelping) {
-    const kindLabel = note.emoji ? `${note.emoji} Helping Hand` : "🖐 Helping Hand";
+    const kindLabel = note.emoji ? `${escapeHtml(note.emoji)} Helping Hand` : "🖐 Helping Hand";
     helpingHeaderHtml = `<div style="font-size:0.7rem; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; color:var(--brand-blue, #1E88E5); margin-bottom:0.35rem;">${kindLabel}</div>`;
 
     if (note.contact_public) {
       const lines = [];
-      if (note.contact_name) lines.push(`<div>👤 ${note.contact_name}</div>`);
-      if (note.contact_phone) lines.push(`<div>📞 <a href="tel:${note.contact_phone}" style="color:var(--brand-blue,#1E88E5);text-decoration:none;">${note.contact_phone}</a></div>`);
-      if (note.contact_email) lines.push(`<div>✉️ <a href="mailto:${note.contact_email}" style="color:var(--brand-blue,#1E88E5);text-decoration:none;">${note.contact_email}</a></div>`);
+      if (note.contact_name) lines.push(`<div>👤 ${escapeHtml(note.contact_name)}</div>`);
+      if (note.contact_phone) lines.push(`<div>📞 <a href="${safeUrl('tel:' + note.contact_phone)}" style="color:var(--brand-blue,#1E88E5);text-decoration:none;">${escapeHtml(note.contact_phone)}</a></div>`);
+      if (note.contact_email) lines.push(`<div>✉️ <a href="${safeUrl('mailto:' + note.contact_email)}" style="color:var(--brand-blue,#1E88E5);text-decoration:none;">${escapeHtml(note.contact_email)}</a></div>`);
       lines.push(`<button type="button" class="note-chat-btn" style="margin-top:0.4rem;background:var(--brand-blue,#1E88E5);color:#fff;border:none;border-radius:999px;padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;cursor:pointer;">💬 Message in chat</button>`);
       contactHtml = `<div style="font-size:0.8rem; color:var(--ui-text); margin:0.4rem 0; line-height:1.6;">${lines.join("")}</div>`;
     }
@@ -2986,10 +3371,11 @@ function buildStreetNotePopupHtml(note) {
       ${helpingHeaderHtml}
       ${imageHtml}
       ${locationHtml}
-      <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${note.text}${permBadge}${foundBadgeHtml}</div>
+      <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${escapeHtml(note.text)}${permBadge}${foundBadgeHtml}</div>
       ${contactHtml}
-      <div style="font-size: 0.75rem; color: var(--ui-muted);">${timeAgo} &middot; ${expiryText}</div>
+      <div style="font-size: 0.75rem; color: var(--ui-muted);">${escapeHtml(timeAgo)} &middot; ${escapeHtml(expiryText)}</div>
       ${resolveBtnHtml}
+      ${reportHtml}
       ${adminDeleteHtml}
     </div>
   `;
@@ -3016,6 +3402,13 @@ function attachStreetNotePopupHandlers(root, note) {
     chatBtn.addEventListener("click", () => {
       map.closePopup();
       if (typeof openChatModal === "function") openChatModal();
+    });
+  }
+  const reportBtn = root.querySelector(".note-report-btn");
+  if (reportBtn) {
+    reportBtn.addEventListener("click", () => {
+      map.closePopup();
+      openReportModal("street_note", note.id);
     });
   }
   const resolveBtn = root.querySelector(".note-resolve-btn");
@@ -3058,7 +3451,7 @@ function renderStreetNotes() {
       className: "map-pin-wrap",
       html: `
         <div class="map-pin map-pin-note${isResolved ? ' is-found' : ''}" style="--pin-accent:${accent}">
-          <span class="map-pin-emoji">${pinEmoji}</span>
+          <span class="map-pin-emoji">${escapeHtml(pinEmoji)}</span>
           ${foundDot}
         </div>`,
       iconSize: [38, 46],
@@ -3298,16 +3691,17 @@ function buildDiscoveryReviewCard() {
 
   let photoHtml = '';
   if (discoveryWizardData.photoDataUrl) {
-    photoHtml = `<img src="${discoveryWizardData.photoDataUrl}" alt="Discovery photo" style="width:100%;height:120px;object-fit:cover;border-radius:10px;margin-bottom:0.625rem;display:block;" />`;
+    const safePhoto = safeUrl(discoveryWizardData.photoDataUrl);
+    if (safePhoto) photoHtml = `<img src="${safePhoto}" alt="Discovery photo" style="width:100%;height:120px;object-fit:cover;border-radius:10px;margin-bottom:0.625rem;display:block;" />`;
   }
 
   const helping = discoveryMode === "helping_hand";
   let contactHtml = '';
   if (helping && discoveryWizardData.contactPublic) {
     const bits = [];
-    if (discoveryWizardData.contactName) bits.push(discoveryWizardData.contactName);
-    if (discoveryWizardData.contactPhone) bits.push(discoveryWizardData.contactPhone);
-    if (discoveryWizardData.contactEmail) bits.push(discoveryWizardData.contactEmail);
+    if (discoveryWizardData.contactName) bits.push(escapeHtml(discoveryWizardData.contactName));
+    if (discoveryWizardData.contactPhone) bits.push(escapeHtml(discoveryWizardData.contactPhone));
+    if (discoveryWizardData.contactEmail) bits.push(escapeHtml(discoveryWizardData.contactEmail));
     bits.push('Community chat');
     contactHtml = `<div class="review-row"><span class="review-row-icon">📨</span><span class="review-row-label">Contact</span><span style="font-size:0.8rem">${bits.join(' · ')}</span></div>`;
   }
@@ -3315,12 +3709,12 @@ function buildDiscoveryReviewCard() {
   reviewCard.innerHTML = `
     ${photoHtml}
     <div class="review-row">
-      <span class="review-row-icon">${discoveryWizardData.emoji || '📍'}</span>
+      <span class="review-row-icon">${escapeHtml(discoveryWizardData.emoji || '📍')}</span>
       <span class="review-row-label">Type</span>
-      <span>${discoveryWizardData.label || (helping ? 'Helping Hand' : 'Discovery')}</span>
+      <span>${escapeHtml(discoveryWizardData.label || (helping ? 'Helping Hand' : 'Discovery'))}</span>
     </div>
     ${questionHtml}
-    ${noteText ? `<div class="review-row"><span class="review-row-icon">📝</span><span class="review-row-label">Note</span><span style="font-size:0.8rem">${noteText.substring(0,80)}${noteText.length>80?'…':''}</span></div>` : ''}
+    ${noteText ? `<div class="review-row"><span class="review-row-icon">📝</span><span class="review-row-label">Note</span><span style="font-size:0.8rem">${escapeHtml(noteText.substring(0,80))}${noteText.length>80?'…':''}</span></div>` : ''}
     ${contactHtml}
     <div class="review-row">
       <span class="review-row-icon">⏳</span>
@@ -3330,7 +3724,7 @@ function buildDiscoveryReviewCard() {
     <div class="review-row">
       <span class="review-row-icon">📍</span>
       <span class="review-row-label">Location</span>
-      <span style="font-size:0.8rem">${locText}</span>
+      <span style="font-size:0.8rem">${escapeHtml(locText)}</span>
     </div>
   `;
   const submitBtn = document.getElementById("street-note-submit");
@@ -3476,6 +3870,9 @@ async function submitStreetNote() {
       await fetchStreetNotes();
       closeStreetNoteModal();
       showToast(helping ? '🖐 Helping Hand posted!' : '📍 Discovery posted!');
+    } else if (response.status === 429) {
+      notifyIfRateLimited(response, 'posting');
+      return;
     } else {
       const errText = await response.text();
       throw new Error(`Failed to post: ${response.status} ${errText}`);
@@ -3483,6 +3880,7 @@ async function submitStreetNote() {
   } catch (error) {
     console.error("Failed to post discovery:", error);
     alert(error && error.message ? error.message : "Failed to post. Please try again.");
+  } finally {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = submitLabel; }
   }
 }
@@ -3777,6 +4175,7 @@ function initStreetNoteModal() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ address: input.value.trim() }),
         });
+        if (notifyIfRateLimited(res, 'searching')) return;
         const data = await res.json();
         if (data.success && data.locations && data.locations.length > 0) {
           const loc = data.locations[0];
@@ -4072,12 +4471,27 @@ function buildChatBubble(msg, inPinnedSection) {
     messageDiv.appendChild(pinBtn);
   }
 
+  // Anyone can flag a message for moderator review.
+  if (msg.id) {
+    const reportBtn = document.createElement("button");
+    reportBtn.type = "button";
+    reportBtn.className = "chat-report-btn";
+    reportBtn.title = "Report message";
+    reportBtn.textContent = "⚑";
+    reportBtn.style.cssText = "background:none;border:none;color:var(--ui-muted,#999);font-size:0.72rem;cursor:pointer;opacity:0.6;padding:0;margin-left:0.4rem;";
+    reportBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openReportModal("chat_message", msg.id);
+    });
+    messageDiv.appendChild(reportBtn);
+  }
+
   return messageDiv;
 }
 
 async function togglePinMessage(msg) {
   try {
-    const res = await fetch(`${API_BASE}/admin/chat/messages/${msg.id}/pin`, {
+    const res = await adminFetch(`${API_BASE}/admin/chat/messages/${msg.id}/pin`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pinned: !msg.pinned }),
@@ -4128,6 +4542,8 @@ async function sendChatMessage() {
     if (response.ok) {
       input.value = "";
       await fetchChatMessages(); // Refresh messages
+    } else if (notifyIfRateLimited(response, 'sending')) {
+      // friendly rate-limit toast already shown
     } else {
       alert("Failed to send message. Please try again.");
     }
@@ -4350,7 +4766,7 @@ async function submitStreetHighlight() {
   submitBtn.textContent = "Creating...";
   
   try {
-    const response = await fetch(`${API_BASE}/admin/street-highlights`, {
+    const response = await adminFetch(`${API_BASE}/admin/street-highlights`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -4530,7 +4946,7 @@ function openEditHighlightModal(highlight) {
     submitBtn.textContent = "Saving...";
     
     try {
-      const response = await fetch(`${API_BASE}/admin/street-highlights/${highlight.id}`, {
+      const response = await adminFetch(`${API_BASE}/admin/street-highlights/${highlight.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -4657,8 +5073,8 @@ function showWelcomeNotice() {
   
   if (!modal || !body) return;
   
-  // Set content
-  body.innerHTML = welcomeNoticeContent;
+  // Set content (admin-authored HTML — sanitize before inserting)
+  body.innerHTML = sanitizeRichHtml(welcomeNoticeContent);
   
   // Show modal
   modal.classList.remove("hidden");
@@ -4693,7 +5109,7 @@ function closeWelcomeNotice() {
 
 async function updateWelcomeNotice(content, enabled) {
   try {
-    const response = await fetch(`${API_BASE}/admin/welcome-notice`, {
+    const response = await adminFetch(`${API_BASE}/admin/welcome-notice`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -4825,7 +5241,7 @@ async function showEditWelcomeNoticeModal() {
     saveBtn.textContent = "Saving...";
     
     try {
-      const response = await fetch(`${API_BASE}/admin/welcome-notice`, {
+      const response = await adminFetch(`${API_BASE}/admin/welcome-notice`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

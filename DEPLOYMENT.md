@@ -16,11 +16,14 @@ This guide will help you deploy (or update) your Community Map application on Re
 1. **Go to Render Dashboard**: https://dashboard.render.com
 2. **Find your backend service** (likely named "community-map-api" or similar)
 3. **Go to Environment tab** and verify these environment variables are set:
+   - `ENVIRONMENT` - `production` (the app refuses to boot with insecure defaults)
    - `MONGO_URL` - Your MongoDB connection string
    - `DB_NAME` - `community_map`
-   - `CORS_ORIGINS` - `*` (or your frontend URL)
-   - `ADMIN_ACCOUNT` - Your admin username
-   - `ADMIN_PIN` - Your admin PIN
+   - `CORS_ORIGINS` - `https://commap.netlify.app` (comma-separate extra origins; never `*` in production)
+   - `ADMIN_ACCOUNT` - Your admin username (required; not left at the default)
+   - `ADMIN_PIN` - Your admin PIN (required; ≥6 chars, not `123456`)
+   - `ADMIN_JWT_SECRET` - Long random secret used to sign admin tokens (required)
+   - `TRUSTED_PROXY_HOPS` - `1` on Render (trusted X-Forwarded-For hops)
    - `PYTHON_VERSION` - `3.11.0` (or `3.13.0` if preferred)
 
 4. **Update the service**:
@@ -45,11 +48,14 @@ This guide will help you deploy (or update) your Community Map application on Re
    - **Plan**: Free
 
 4. **Add Environment Variables**:
+   - `ENVIRONMENT` = `production` (the app refuses to boot with insecure defaults)
    - `MONGO_URL` - Your MongoDB connection string
    - `DB_NAME` = `community_map`
-   - `CORS_ORIGINS` = `*` (update later with your frontend URL for security)
-   - `ADMIN_ACCOUNT` = Your admin username
-   - `ADMIN_PIN` = Your admin PIN
+   - `CORS_ORIGINS` = `https://commap.netlify.app` (your frontend origin; never `*` in production)
+   - `ADMIN_ACCOUNT` = Your admin username (required; not left at the default)
+   - `ADMIN_PIN` = Your admin PIN (required; ≥6 chars, not `123456`)
+   - `ADMIN_JWT_SECRET` = Long random secret used to sign admin tokens (required)
+   - `TRUSTED_PROXY_HOPS` = `1` on Render (trusted X-Forwarded-For hops)
    - `PYTHON_VERSION` = `3.11.0`
 
 5. **Create Service** - Render will automatically deploy
@@ -162,7 +168,7 @@ After deploying your backend, you'll get a URL like:
 
 1. **Auto-Deploy**: Render automatically deploys on git push (if enabled)
 2. **Free Tier**: Services sleep after 15 minutes of inactivity (first request will be slow)
-3. **CORS**: Update `CORS_ORIGINS` in backend to your frontend URL for better security
+3. **CORS**: `CORS_ORIGINS` must list your real frontend origin(s), e.g. `https://commap.netlify.app`. Do not use `*` — CORS only constrains browsers, not curl/bots, so keep it tight and rely on auth + rate limits for real protection.
 4. **MongoDB**: Ensure your MongoDB Atlas allows connections from Render's IPs (or use 0.0.0.0/0 for testing)
 
 ---

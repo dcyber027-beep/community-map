@@ -281,11 +281,25 @@ pip install -r requirements.txt
 `backend/.env`:
 
 ```env
+# Local dev only. ENVIRONMENT=development relaxes the production guard so the
+# app can boot with an ephemeral JWT secret and the default admin PIN.
+# In production (the default if ENVIRONMENT is unset) the app FAILS CLOSED and
+# refuses to start without a real ADMIN_JWT_SECRET and a non-default ADMIN_PIN.
+ENVIRONMENT=development
 MONGO_URL=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?appName=Cluster0
 DB_NAME=community_map
-CORS_ORIGINS=*
+# Comma-separated allowlist of browser origins. NEVER use "*" in production —
+# CORS only constrains browsers, not curl/bots, so keep it tight regardless.
+CORS_ORIGINS=https://commap.netlify.app,http://localhost:5173,http://127.0.0.1:5173
 ADMIN_ACCOUNT=admin
-ADMIN_PIN=123456
+ADMIN_PIN=change-me
+# Required in production: signs the admin session JWT returned by /admin/verify.
+# Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+ADMIN_JWT_SECRET=replace-with-a-long-random-secret
+ADMIN_TOKEN_TTL_HOURS=12
+# Trusted reverse-proxy hops for client-IP resolution in rate limiting.
+# Render = 1 (real client IP is the LAST X-Forwarded-For entry). 0 = no proxy.
+TRUSTED_PROXY_HOPS=1
 ```
 
 ```bash
@@ -347,7 +361,40 @@ All routes under `/api`. Interactive docs at `/docs`.
 
 ### Admin (after `/api/admin/verify`)
 
-Incidents CRUD, live-updates, street-highlights CRUD, street-notes delete, welcome-notice update.
+`POST /api/admin/verify` returns a short-lived signed JWT (`token`). Every
+`/api/admin/*` route is protected server-side by `Depends(require_admin)` and
+requires that token as `Authorization: Bearer <token>`. The frontend stores it
+in `sessionStorage` and attaches it via the `adminFetch()` wrapper; a 401
+transparently logs the admin out.
+
+Protected: incidents CRUD, live-updates, street-highlights CRUD, street-notes
+delete, welcome-notice update, chat pin.
+
+### Security hardening (Phase 0)
+
+- **Auth** — all `/admin/*` routes require a valid admin JWT (not just the old
+  client-side check). PIN check uses constant-time comparison.
+- **Fail-closed config** — `ENVIRONMENT` defaults to `production`; in production
+  the app refuses to boot if `ADMIN_JWT_SECRET` is missing or if `ADMIN_PIN` is
+  unset, the well-known default, or shorter than 6 chars. Set
+  `ENVIRONMENT=development` locally to relax this.
+- **Trustworthy client IP** — rate limiting reads the client IP from the
+  trusted (right-hand) side of `X-Forwarded-For` based on `TRUSTED_PROXY_HOPS`
+  (1 on Render), so attackers can't rotate a spoofed leftmost value to dodge
+  per-IP limits.
+- **Stored XSS** — frontend escapes all untrusted text via `escapeHtml()`,
+  validates URLs via `safeUrl()`, and sanitizes admin-authored HTML (welcome
+  notice) with DOMPurify (vendored at `frontend/vendor/purify.min.js`).
+- **Rate limits** — in-memory per-IP sliding windows on `/admin/verify`,
+  `/incidents`, `/street-notes`, `/chat/messages`, `/geocode`, `/peers`,
+  reactions and heartbeat.
+- **CORS** — restricted to the real frontend origins; credentials disabled if a
+  wildcard origin is ever configured.
+- **Validation** — Pydantic validators enforce category/urgency/colour enums,
+  lat/lng ranges, text lengths, and safe image-URL schemes.
+- **Headers** — backend sends `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy`, `Permissions-Policy` and a locked-down CSP; Netlify
+  `_headers` ships a strict CSP for the static site.
 
 ### Collections
 

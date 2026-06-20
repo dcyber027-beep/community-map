@@ -567,6 +567,8 @@
       src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"
       crossorigin=""
     ></script>
+    <!-- HTML sanitizer (vendored locally so CSP can stay strict) -->
+    <script src="./vendor/purify.min.js"></script>
 
     <!-- Community Discovery Modal — 4-Step Wizard -->
     <div id="street-note-modal" class="street-note-overlay hidden" aria-hidden="true">
@@ -964,17 +966,7 @@
       </div>
     </div>
 
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').then(reg => {
-            console.log('SW registered, scope:', reg.scope);
-          }).catch(err => {
-            console.log('SW registration failed:', err);
-          });
-        });
-      }
-    </script>
+    <script src="./sw-register.js"></script>
   </body>
 </html>
 

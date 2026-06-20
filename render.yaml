@@ -8,16 +8,24 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      - key: ENVIRONMENT
+        value: production  # Fail closed: app refuses to boot with insecure defaults
       - key: MONGO_URL
         sync: false  # Set this in Render dashboard
       - key: DB_NAME
         value: community_map
       - key: CORS_ORIGINS
-        value: *
+        value: https://commap.netlify.app
       - key: ADMIN_ACCOUNT
-        sync: false  # Set this in Render dashboard
+        sync: false  # Required in production — set in Render dashboard
       - key: ADMIN_PIN
-        sync: false  # Set this in Render dashboard
+        sync: false  # Required in production (>=6 chars, not the default) — set in dashboard
+      - key: ADMIN_JWT_SECRET
+        generateValue: true  # Required in production; Render generates a stable secret
+      - key: ADMIN_TOKEN_TTL_HOURS
+        value: "12"
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"  # Render appends the real client IP as the last X-Forwarded-For entry
     plan: free
 
   # Frontend Static Site

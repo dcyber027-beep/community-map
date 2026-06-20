@@ -48,11 +48,14 @@ git push origin main
 ### Step 3: Check Environment Variables
 1. Click the **"Environment"** tab (left sidebar)
 2. Verify these variables exist:
+   - ✅ `ENVIRONMENT` - Should be `production` (app refuses to boot with insecure defaults)
    - ✅ `MONGO_URL` - Your MongoDB connection string
    - ✅ `DB_NAME` - Should be `community_map`
-   - ✅ `CORS_ORIGINS` - Should be `*` (or your frontend URL)
-   - ✅ `ADMIN_ACCOUNT` - Your admin username
-   - ✅ `ADMIN_PIN` - Your admin PIN
+   - ✅ `CORS_ORIGINS` - Should be `https://commap.netlify.app` (never `*` in production)
+   - ✅ `ADMIN_ACCOUNT` - Your admin username (required; not the default)
+   - ✅ `ADMIN_PIN` - Your admin PIN (required; ≥6 chars, not `123456`)
+   - ✅ `ADMIN_JWT_SECRET` - Long random secret for signing admin tokens (required)
+   - ✅ `TRUSTED_PROXY_HOPS` - `1` on Render
    - ✅ `PYTHON_VERSION` - Should be `3.11.0` or `3.13.0`
 
 3. **If any are missing**, click **"Add Environment Variable"** and add them
@@ -146,7 +149,7 @@ You have two options:
 ### Frontend can't connect to backend?
 1. Check browser console (F12) for errors
 2. Verify API URL in `frontend/app.js` matches your backend URL
-3. Check CORS settings in backend (CORS_ORIGINS should include frontend URL or `*`)
+3. Check CORS settings in backend (CORS_ORIGINS must include your frontend origin, e.g. `https://commap.netlify.app`; do not use `*`)
 
 ### Environment variables not working?
 1. Go to Environment tab
