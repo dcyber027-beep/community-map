@@ -8,6 +8,9 @@ A community-driven safety and awareness web app for Melbourne. Users can report 
 
 ## Recent improvements
 
+- Added a **Now Bar** at the top of the map — a rotating stack of contextual notification cards built on the existing Emergency banner (see [Now Bar](#now-bar--rotating-notifications)). One card shows at a time with the next peeking beneath; auto-rotates, swipeable, and works on phone + desktop.
+- Added a **content flagging & moderation** system (see [Flagging & moderation](#flagging--moderation)). Anyone can flag a misleading/wrong/abusive incident, street note, or chat message; admins review a queue and can **delete reports or street highlights by tapping them directly on the map**.
+- **Security & robustness hardening** — separated the public *flag content* flow from the *Report Incident* wizard (they previously collided on one function name), routed all moderation through the JWT-protected admin API, and kept reported-content previews injection-safe (`textContent`/DOM, never `innerHTML`).
 - Added the **Helping Hand** community mutual-aid flow (see [What the app does](#helping-hand--community-mutual-aid)) — lost pet/kid posts, plus sharing an umbrella, spare charger, or first aid.
 - Added a **desktop-specific layout** (≥769px) that keeps the mobile UI minimal while giving large screens more chrome — see [Responsive layout](#responsive-layout-mobile-vs-desktop).
 - Added a **presence indicator dot** on the online/chat control: **green** when your avatar + location are visible to others, **red** when you've hidden your avatar (which also turns location sharing off).
@@ -47,6 +50,8 @@ A community-driven safety and awareness web app for Melbourne. Users can report 
 - **Avatar & presence** — Choose an emoji avatar and display title; your marker appears on the map at GPS. Peer locations sync across devices via `/api/peers`. The online/chat control shows a **presence dot** — **green** when your avatar + location are shared, **red** when your avatar is off (🚫), which also stops location sharing.
 - **Responsive layout** — Mobile stays deliberately minimal; desktop unlocks a richer layout (see [Responsive layout](#responsive-layout-mobile-vs-desktop)).
 - **Group chat** — Anonymous chat linked to the live-updates banner; messages auto-clear after 24 hours.
+- **Now Bar** — A rotating notification pill at the top of the map (see [Now Bar](#now-bar--rotating-notifications)). Surfaces Emergency, Incident summary, Highlighted streets, Community activity, and a Tutorial card.
+- **Flag content** — Flag any incident, street note, or chat message as misleading, wrong, or abusive for moderator review (see [Flagging & moderation](#flagging--moderation)). Separate from posting a new incident.
 - **Welcome notice** — Admin-editable popup on load.
 - **PWA** — Install to home screen; offline shell via service worker.
 - **Theming** — Light and dark mode via `prefers-color-scheme`, with frosted-glass map chrome in both.
@@ -62,6 +67,30 @@ The app is a single responsive frontend — the **same** `index.html` / `app.js`
   - The **Street Highlights legend** in the **top-right** corner.
 
   The redundant mobile pills and compact online pill are hidden on desktop. The mobile experience is untouched (all desktop-only chrome lives inside a `@media (min-width: 769px)` block).
+
+### Now Bar — rotating notifications
+
+The static Emergency banner is now the first card in a **Now Bar**: a vertically-rotating stack of contextual notification cards at the top of the map. The Emergency banner is treated as the base component, so every card inherits its exact radius, shadow, height, and typography — only the accent gradient changes per type. The design matches the Community Map glass UI (Samsung-style "peek", no arrows or pagination dots).
+
+- **Behaviour** — One card is fully visible; the next **peeks ~8%** beneath it as the only "there's more" cue. Auto-rotates every **5 seconds** when idle, pauses on interaction, and supports **vertical swipe** to browse. Honours `prefers-reduced-motion` and pauses while the tab is hidden.
+- **Cards (in order)** — Emergency → Incidents nearby → Highlighted streets → Community online → Tutorial. Each card is tappable and runs an action:
+  - **Emergency** → dials `tel:000`.
+  - **Incidents nearby** → opens the list view (count is live from the incidents feed).
+  - **Highlighted streets** → zooms the map to the CBD street highlights.
+  - **Community online** → opens community chat (count is live from active-user presence).
+  - **Tutorial** → opens a short walkthrough video; the card always stays in the rotation (last position). Completion is remembered in `localStorage` (`tutorialCompleted`) and mirrored to the user profile when available.
+- **Cross-platform** — The same component renders on phone and desktop (it lives inside the shared top overlay), feeling native on both iOS and Android.
+
+### Flagging & moderation
+
+A community **content-flagging** system, kept deliberately separate from the *Report Incident* wizard. Anyone can flag a piece of content as misleading, wrong, or abusive; flags land in an admin-only moderation queue.
+
+- **What can be flagged** — incidents (map pins), street notes, and chat messages.
+- **User flow** — Tap a pin → **🚩 Flag as misleading or wrong** (or the ⚑ control on notes/chat) → choose a reason (spam, harassment, violence, sexual, hate, shares private info, false/misleading, other) → optional details → submit. Posts to `POST /api/reports`; rate-limited per IP.
+- **Admin review** — Only visible when logged in. The dashboard shows a **🚩 Reported content (N)** queue with an injection-safe preview of each item and **Dismiss / Hide / Unhide / Delete** actions. *Hide* removes content from public views (`hidden` flag) without deleting it; *Delete* removes it permanently.
+- **Tap-to-moderate on the map** — When logged in as admin, tapping a **pin** shows **🗑 Delete this report**, and tapping a **street highlight** shows **🗑 Delete highlight** — no need to open the dashboard.
+
+**Data model:** flags are stored in a `content_reports` collection (`target_type`, `target_id`, `reason`, `details`, `status` open/actioned/dismissed, `resolution`, timestamps). Hidden content carries a `hidden: true` flag on its own document and is filtered out of all public `GET` endpoints.
 
 ### Helping Hand — community mutual aid
 
@@ -97,8 +126,10 @@ Helping Hand posts reuse the Street Note experience (optional photo, optional de
 - Edit / delete incidents (including verified contact info).
 - Draw **street highlights** (two pins, colour, reason, description).
 - Delete any street note (including permanent).
+- **Review flagged content** — a moderation queue with Dismiss / Hide / Unhide / Delete (see [Flagging & moderation](#flagging--moderation)).
+- **Tap-to-moderate** — delete a report or street highlight by tapping it directly on the map.
 - Edit live-updates banner and welcome notice.
-- Dashboard for incidents, highlights, and notes.
+- Dashboard for incidents, highlights, notes, and reports.
 
 ### Background behaviour
 
@@ -354,6 +385,7 @@ All routes under `/api`. Interactive docs at `/docs`.
 | GET | `/api/live-updates` | Banner text |
 | GET | `/api/street-highlights` | Admin polylines |
 | GET/POST | `/api/street-notes` | Community tips |
+| POST | `/api/reports` | Flag content for moderation (incident / note / chat) |
 | GET | `/api/welcome-notice` | Welcome popup HTML |
 | POST | `/api/peers` | Upsert live avatar location |
 | GET | `/api/peers` | List active peers (60s TTL) |
@@ -368,7 +400,14 @@ in `sessionStorage` and attaches it via the `adminFetch()` wrapper; a 401
 transparently logs the admin out.
 
 Protected: incidents CRUD, live-updates, street-highlights CRUD, street-notes
-delete, welcome-notice update, chat pin.
+delete, welcome-notice update, chat pin, and **moderation**:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/admin/reports?status=open` | Moderation queue with content previews + open count |
+| POST | `/api/admin/reports/{id}/action` | Resolve a flag: `dismiss` / `hide` / `unhide` / `delete` |
+| DELETE | `/api/admin/incidents/{id}` | Delete a report (used by tap-to-moderate) |
+| DELETE | `/api/admin/street-highlights/{id}` | Delete a highlight (used by tap-to-moderate) |
 
 ### Security hardening (Phase 0)
 
@@ -395,10 +434,19 @@ delete, welcome-notice update, chat pin.
 - **Headers** — backend sends `X-Content-Type-Options`, `X-Frame-Options`,
   `Referrer-Policy`, `Permissions-Policy` and a locked-down CSP; Netlify
   `_headers` ships a strict CSP for the static site.
+- **Content moderation** — community flagging (`/api/reports`) feeds an
+  admin-only queue; all moderation actions go through JWT-protected `/admin/*`
+  routes. *Hidden* content (`hidden: true`) is filtered out of every public
+  `GET`, and reported-content previews in the dashboard are rendered with
+  `textContent`/DOM nodes (never `innerHTML`) so flagged content can never run.
+- **No flag/report confusion** — the public *flag content* modal and the
+  *Report Incident* wizard are now distinct functions (`openFlagModal` vs
+  `openReportModal`), fixing a name collision that previously routed flags into
+  the wrong flow.
 
 ### Collections
 
-`incidents` · `street_notes` · `street_highlights` · `chat_messages` · `peers` · `active_users` · `live_updates` · `welcome_notice` · `migrations`
+`incidents` · `street_notes` · `street_highlights` · `chat_messages` · `peers` · `active_users` · `live_updates` · `welcome_notice` · `content_reports` · `migrations`
 
 ---
 

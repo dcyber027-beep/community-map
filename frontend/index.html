@@ -79,11 +79,25 @@
 
         <!-- Floating top overlay: emergency pill + header card -->
         <div class="map-overlay-top">
-          <div class="emergency-pill">
-            <span class="emergency-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12 2 1 21h22L12 2zm0 6c.6 0 1 .4 1 1v5a1 1 0 1 1-2 0V9c0-.6.4-1 1-1zm0 9.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z"/></svg>
-            </span>
-            <span class="emergency-text"><strong>Emergency?</strong> Call <strong>000</strong> for immediate assistance</span>
+          <!-- Now Bar — rotating contextual card stack. The Emergency banner is the
+               base card; other cards inherit its proportions, shadow and radius.
+               JS (initNowBar) rebuilds and rotates the stack; this static Emergency
+               card is the no-JS fallback so the banner never disappears. -->
+          <div class="now-bar" id="now-bar" aria-label="Now Bar">
+            <div class="now-bar-stack" id="now-bar-stack">
+              <button type="button" class="nb-card nb-card--emergency emergency-pill is-active" data-card="emergency">
+                <span class="nb-icon emergency-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><path d="M12 2 1 21h22L12 2zm0 6c.6 0 1 .4 1 1v5a1 1 0 1 1-2 0V9c0-.6.4-1 1-1zm0 9.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z"/></svg>
+                </span>
+                <span class="nb-body">
+                  <span class="nb-title">Emergency? Call 000</span>
+                  <span class="nb-subtitle">For immediate assistance</span>
+                </span>
+                <span class="nb-chevron" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+                </span>
+              </button>
+            </div>
           </div>
 
           <div class="map-header-card">

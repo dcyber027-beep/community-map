@@ -6999,3 +6999,167 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
     right: 0.7rem;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   NOW BAR — rotating contextual card stack.
+   The Emergency banner is the base component: every card inherits its exact
+   geometry (radius, padding, shadow tier, height, typography). Only the
+   gradient/accent changes per card type. One card is fully visible; the next
+   peeks ~8% beneath it as the only "there is more" cue (no arrows, no dots).
+   Applies identically on phone + desktop (lives inside .map-overlay-top).
+   ════════════════════════════════════════════════════════════════════════ */
+.now-bar {
+  --nb-h: 64px;          /* shared card height — defined by the Emergency banner */
+  --nb-peek: 8px;        /* sliver of the next card revealed beneath the active */
+  --nb-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  /* Tighten the gap down to the Community Map island so the map stays dominant */
+  margin-bottom: -0.35rem;
+}
+
+.now-bar-stack {
+  position: relative;
+  height: calc(var(--nb-h) + var(--nb-peek));
+  /* Peek must be allowed to spill just past the active card's bottom edge */
+  overflow: visible;
+  touch-action: pan-x;
+}
+
+/* Base card — mirrors the Emergency banner's proportions for ALL card types */
+.nb-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--nb-h);
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0 1.25rem;
+  border-radius: var(--r-card, 32px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: -0.01em;
+  /* Same shadow tier / visual weight as the Emergency banner */
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+  transform-origin: top center;
+  transition: transform 0.5s var(--nb-ease), opacity 0.45s var(--nb-ease),
+    filter 0.45s var(--nb-ease);
+  will-change: transform, opacity;
+  -webkit-tap-highlight-color: transparent;
+}
+.nb-card:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.85); outline-offset: 2px; }
+
+/* Per-type accent gradients (kept at the Emergency banner's saturation level) */
+.nb-card--emergency {
+  background: linear-gradient(180deg, #d62828, #c1121f);
+  box-shadow: 0 12px 30px rgba(80, 10, 16, 0.3);
+}
+.nb-card--tutorial {
+  background: linear-gradient(180deg, #2f6df6, #1d4ed8);
+  box-shadow: 0 12px 30px rgba(15, 40, 110, 0.3);
+}
+.nb-card--incident {
+  background: linear-gradient(180deg, #f59e0b, #ea7a0c);
+  box-shadow: 0 12px 30px rgba(120, 60, 5, 0.3);
+}
+.nb-card--highlight {
+  background: linear-gradient(180deg, #7c3aed, #6d28d9);
+  box-shadow: 0 12px 30px rgba(60, 20, 110, 0.3);
+}
+.nb-card--community {
+  background: linear-gradient(180deg, #16a34a, #15803d);
+  box-shadow: 0 12px 30px rgba(10, 70, 35, 0.3);
+}
+
+/* Icon — same plain white glyph treatment as the Emergency banner (no circle) */
+.nb-card .nb-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+.nb-card .nb-icon svg { width: 18px; height: 18px; }
+
+.nb-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+.nb-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nb-subtitle {
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.2;
+  opacity: 0.92;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nb-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+/* ── Stack states ─────────────────────────────────────────────────────────
+   active : on top, fully visible
+   next   : behind + nudged down so a thin sliver peeks beneath the active
+   prev   : the card that just left — slides up and fades
+   (default / back) : hidden behind, ready to become next
+*/
+.nb-card { opacity: 0; transform: translateY(var(--nb-peek)) scale(0.92); z-index: 1; pointer-events: none; }
+.nb-card.is-next {
+  opacity: 1;
+  transform: translateY(var(--nb-peek)) scale(0.96);
+  filter: brightness(0.97);
+  z-index: 2;
+  pointer-events: none;
+}
+.nb-card.is-active {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: none;
+  z-index: 4;
+  pointer-events: auto;
+}
+.nb-card.is-prev {
+  opacity: 0;
+  transform: translateY(-58%) scale(0.98);
+  z-index: 3;
+  pointer-events: none;
+}
+.nb-card.is-active:active { transform: translateY(0) scale(0.985); }
+
+/* Respect reduced-motion: cross-fade only, no vertical travel */
+@media (prefers-reduced-motion: reduce) {
+  .nb-card { transition: opacity 0.25s ease; }
+  .nb-card.is-prev { transform: translateY(var(--nb-peek)) scale(0.96); }
+}
+
+/* Keep the Emergency card visually identical to the original banner.
+   It still carries .emergency-pill, but inside the stack it is absolutely
+   positioned and laid out by .nb-card, so neutralise the legacy pill metrics
+   that would otherwise fight the shared card geometry. */
+.nb-card.emergency-pill { padding: 0 1.25rem; }
+
+@media (min-width: 769px) {
+  /* Slightly roomier on desktop to match the wider control islands */
+  .now-bar { --nb-h: 66px; }
+}

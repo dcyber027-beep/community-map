@@ -933,7 +933,8 @@ async function openDetailModal(incident) {
           👎 Dislike
         </button>
       </div>
-      <button id="detail-report-btn" type="button" style="margin-top:0.6rem;background:none;border:none;color:var(--ui-muted,#888);font-size:0.78rem;cursor:pointer;text-decoration:underline;padding:0;">⚑ Report this report</button>
+      <button id="detail-report-btn" type="button" style="margin-top:0.6rem;background:none;border:none;color:var(--ui-muted,#888);font-size:0.78rem;cursor:pointer;text-decoration:underline;padding:0;">🚩 Flag as misleading or wrong</button>
+      ${isAdminLoggedIn ? `<button id="detail-admin-delete-btn" type="button" style="margin-top:0.6rem;width:100%;background:#dc2626;border:none;color:#fff;font-size:0.85rem;font-weight:600;cursor:pointer;padding:0.6rem;border-radius:8px;">🗑 Delete this report (admin)</button>` : ''}
     </div>
   `;
 
@@ -976,7 +977,27 @@ async function openDetailModal(incident) {
 
   const reportBtn = document.getElementById("detail-report-btn");
   if (reportBtn) {
-    reportBtn.addEventListener("click", () => openReportModal("incident", incident.id));
+    reportBtn.addEventListener("click", () => openFlagModal("incident", incident.id));
+  }
+
+  // Admin moderation: delete this report straight from the pin's detail card.
+  const adminDeleteBtn = document.getElementById("detail-admin-delete-btn");
+  if (adminDeleteBtn) {
+    adminDeleteBtn.addEventListener("click", async () => {
+      if (!confirm("Permanently delete this report?")) return;
+      adminDeleteBtn.disabled = true;
+      adminDeleteBtn.textContent = "Deleting…";
+      try {
+        await deleteIncident(incident.id);
+        closeDetailModal();
+        showToast("🗑 Report deleted");
+        await fetchIncidents();
+      } catch (e) {
+        adminDeleteBtn.disabled = false;
+        adminDeleteBtn.textContent = "🗑 Delete this report (admin)";
+        showToast("Could not delete. Please try again.");
+      }
+    });
   }
 
   const modal = document.getElementById("detail-modal");
@@ -1090,8 +1111,10 @@ const REPORT_REASONS = [
 ];
 
 // Opens a lightweight modal letting a user flag a piece of content for review.
+// This is SEPARATE from the "Report Incident" wizard (openReportModal): flagging
+// asks the community to escalate misleading/wrong/abusive content to moderators.
 // targetType: "incident" | "street_note" | "chat_message"
-function openReportModal(targetType, targetId) {
+function openFlagModal(targetType, targetId) {
   if (!targetId) return;
   const existing = document.getElementById("report-content-overlay");
   if (existing) existing.remove();
@@ -1708,6 +1731,7 @@ async function updateActiveUsersCount() {
       : `${count} people active on the map, tap to chat`;
     if (legacyText) legacyText.textContent = activeLabel;
     if (dluCount) dluCount.textContent = activeLabel;
+    if (typeof nowBarRefreshDynamic === "function") nowBarRefreshDynamic();
   };
 
   try {
@@ -1773,6 +1797,13 @@ async function deleteIncident(id) {
     method: "DELETE",
   });
   if (!res.ok) throw new Error("Failed to delete incident");
+}
+
+async function deleteHighlightById(id) {
+  const res = await adminFetch(`${API_BASE}/admin/street-highlights/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to delete highlight");
 }
 
 async function updateIncident(id, updateData) {
@@ -3016,21 +3047,53 @@ function showHighlightDescription(highlight) {
   const reasonText = reasonLabels[highlight.reason] || highlight.reason;
   const midLat = (highlight.start_lat + highlight.end_lat) / 2;
   const midLng = (highlight.start_lng + highlight.end_lng) / 2;
-  
+
   const description = highlight.description || "No additional details provided.";
-  
-  L.popup()
-    .setLatLng([midLat, midLng])
-    .setContent(`
-      <div style="padding: 0.5rem; max-width: 280px;">
-        <div style="font-weight: 600; margin-bottom: 0.5rem; color: var(--ui-text);">${escapeHtml(reasonText)}</div>
-        <div style="font-size: 0.875rem; color: var(--ui-soft); line-height: 1.5;">${escapeHtml(description)}</div>
-        <div style="font-size: 0.75rem; color: var(--ui-muted); margin-top: 0.5rem;">
-          Highlighted by admin
-        </div>
-      </div>
-    `)
-    .openOn(map);
+
+  // Build the popup as DOM nodes (textContent) so content is injection-safe and
+  // we can attach an admin delete handler directly.
+  const container = document.createElement("div");
+  container.style.cssText = "padding:0.5rem;max-width:280px;";
+
+  const titleEl = document.createElement("div");
+  titleEl.style.cssText = "font-weight:600;margin-bottom:0.5rem;color:var(--ui-text);";
+  titleEl.textContent = reasonText;
+
+  const descEl = document.createElement("div");
+  descEl.style.cssText = "font-size:0.875rem;color:var(--ui-soft);line-height:1.5;";
+  descEl.textContent = description;
+
+  const metaEl = document.createElement("div");
+  metaEl.style.cssText = "font-size:0.75rem;color:var(--ui-muted);margin-top:0.5rem;";
+  metaEl.textContent = "Highlighted by admin";
+
+  container.append(titleEl, descEl, metaEl);
+
+  const popup = L.popup().setLatLng([midLat, midLng]).setContent(container).openOn(map);
+
+  // Admin moderation: delete this highlight straight from the map.
+  if (isAdminLoggedIn) {
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.textContent = "🗑 Delete highlight";
+    delBtn.style.cssText = "margin-top:0.6rem;width:100%;background:#dc2626;border:none;color:#fff;font-size:0.82rem;font-weight:600;cursor:pointer;padding:0.5rem;border-radius:6px;";
+    delBtn.addEventListener("click", async () => {
+      if (!confirm("Delete this street highlight?")) return;
+      delBtn.disabled = true;
+      delBtn.textContent = "Deleting…";
+      try {
+        await deleteHighlightById(highlight.id);
+        if (map) map.closePopup(popup);
+        showToast("🗑 Highlight deleted");
+        await fetchAdminStreetHighlights();
+      } catch (e) {
+        delBtn.disabled = false;
+        delBtn.textContent = "🗑 Delete highlight";
+        showToast("Could not delete highlight. Please try again.");
+      }
+    });
+    container.appendChild(delBtn);
+  }
 }
 
 function addStreetHighlightsLegend() {
@@ -3408,7 +3471,7 @@ function attachStreetNotePopupHandlers(root, note) {
   if (reportBtn) {
     reportBtn.addEventListener("click", () => {
       map.closePopup();
-      openReportModal("street_note", note.id);
+      openFlagModal("street_note", note.id);
     });
   }
   const resolveBtn = root.querySelector(".note-resolve-btn");
@@ -4481,7 +4544,7 @@ function buildChatBubble(msg, inPinnedSection) {
     reportBtn.style.cssText = "background:none;border:none;color:var(--ui-muted,#999);font-size:0.72rem;cursor:pointer;opacity:0.6;padding:0;margin-left:0.4rem;";
     reportBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      openReportModal("chat_message", msg.id);
+      openFlagModal("chat_message", msg.id);
     });
     messageDiv.appendChild(reportBtn);
   }
@@ -5651,6 +5714,323 @@ async function waitForBackend() {
   setTimeout(() => { overlay.style.display = 'none'; }, 600);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NOW BAR — rotating contextual card stack
+// The Emergency banner becomes the first card in a vertically-rotating stack.
+// One card is fully visible; the next peeks ~8% beneath it. Auto-rotates every
+// 5s when idle, pauses on interaction, supports vertical swipe. Works on phone
+// + desktop (the stack lives inside .map-overlay-top).
+// ─────────────────────────────────────────────────────────────────────────────
+const NOW_BAR_TUTORIAL_KEY = "tutorialCompleted";
+const NOW_BAR_TUTORIAL_URL = "https://youtu.be/dQw4w9WgXcQ?si=_MgJQLDMSsTmGcjb";
+const NOW_BAR_ROTATE_MS = 5000;   // auto-advance cadence when idle
+const NOW_BAR_RESUME_MS = 8000;   // idle window before auto-rotation resumes
+const NOW_BAR_SWIPE_PX = 30;      // min vertical travel to count as a swipe
+
+// Static, trusted icon markup (our own SVGs — safe to assign as innerHTML).
+const NB_ICONS = {
+  emergency:
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2 1 21h22L12 2zm0 6c.6 0 1 .4 1 1v5a1 1 0 1 1-2 0V9c0-.6.4-1 1-1zm0 9.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z"/></svg>',
+  tutorial:
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+  incident:
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2 1 21h22L12 2zm0 6c.6 0 1 .4 1 1v5a1 1 0 1 1-2 0V9c0-.6.4-1 1-1zm0 9.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z"/></svg>',
+  highlight:
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/></svg>',
+  community:
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M16 11a3 3 0 1 0-3-3 3 3 0 0 0 3 3zm-8 0a3 3 0 1 0-3-3 3 3 0 0 0 3 3zm0 2c-2.3 0-7 1.2-7 3.5V19h8v-2.5c0-.9.4-1.7 1-2.4A12 12 0 0 0 8 13zm8 0c-.3 0-.6 0-1 .1 1.3.9 2 2 2 3.4V19h6v-2.5c0-2.3-4.7-3.5-7-3.5z"/></svg>',
+};
+const NB_CHEVRON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>';
+
+const nowBar = {
+  stack: null,
+  cards: [],          // [{ type, title, subtitle, el, titleEl, subtitleEl }]
+  index: 0,
+  rotateTimer: null,
+  resumeTimer: null,
+  wired: false,
+  // swipe tracking
+  down: false,
+  startX: 0,
+  startY: 0,
+  swiped: false,
+  suppressClick: false,
+};
+
+function isTutorialCompleted() {
+  try {
+    if (localStorage.getItem(NOW_BAR_TUTORIAL_KEY) === "true") return true;
+  } catch {}
+  // Honour a server-provided profile flag when one is present.
+  try {
+    if (window.userProfile && window.userProfile.tutorialCompleted) return true;
+  } catch {}
+  return false;
+}
+
+function markTutorialCompleted() {
+  try { localStorage.setItem(NOW_BAR_TUTORIAL_KEY, "true"); } catch {}
+  // Mirror into the in-memory profile so other views can read it this session.
+  try {
+    if (!window.userProfile) window.userProfile = {};
+    window.userProfile.tutorialCompleted = true;
+  } catch {}
+  // Best-effort profile sync hook (no-op until a backend endpoint exists).
+  try { if (typeof persistTutorialState === "function") persistTutorialState(true); } catch {}
+}
+
+function nowBarOnlineCount() {
+  const el = document.getElementById("online-count-text");
+  if (!el) return 0;
+  const m = (el.textContent || "").match(/\d+/);
+  return m ? parseInt(m[0], 10) : 0;
+}
+
+// ── Card actions ─────────────────────────────────────────────────────────────
+function nowBarZoomToHighlights() {
+  activateView("map");
+  setTimeout(() => {
+    try {
+      if (adminHighlightsLayer && typeof adminHighlightsLayer.getLayers === "function" &&
+          adminHighlightsLayer.getLayers().length && map) {
+        const b = adminHighlightsLayer.getBounds();
+        if (b && b.isValid()) {
+          map.fitBounds(b, { padding: [80, 80], maxZoom: 17 });
+          return;
+        }
+      }
+      if (Array.isArray(adminStreetHighlights) && adminStreetHighlights.length && map) {
+        const h = adminStreetHighlights[0];
+        const lat = (h.start_lat + h.end_lat) / 2;
+        const lng = (h.start_lng + h.end_lng) / 2;
+        map.setView([lat, lng], 17);
+        return;
+      }
+      // No admin highlights loaded yet — focus the CBD highlight area.
+      if (map) map.setView([MELBOURNE_CBD.lat, MELBOURNE_CBD.lng], 16);
+    } catch (e) {
+      console.error("Now Bar zoom failed:", e);
+    }
+  }, 120);
+}
+
+function nowBarOpenTutorial() {
+  try { window.open(NOW_BAR_TUTORIAL_URL, "_blank", "noopener"); } catch {}
+  // Watching/opening the tutorial counts as completion.
+  completeTutorial();
+}
+
+// Called when the user watches, completes, or dismisses the tutorial.
+// The tutorial card stays in the rotation; we only record that it was opened.
+function completeTutorial() {
+  markTutorialCompleted();
+}
+
+// Ordered card set. Tutorial-first for new users; Emergency-first (no tutorial)
+// once the tutorial has been completed/dismissed.
+function nowBarCardConfigs() {
+  const emergency = {
+    type: "emergency",
+    title: "Emergency? Call 000",
+    subtitle: "For immediate assistance",
+    action: () => { window.location.href = "tel:000"; },
+  };
+  const tutorial = {
+    type: "tutorial",
+    title: "New here?",
+    subtitle: "Watch a 30-second tutorial",
+    action: nowBarOpenTutorial,
+  };
+  const incident = {
+    type: "incident",
+    title: "3 active incidents nearby",
+    subtitle: "Updated just now",
+    action: () => activateView("list"),
+  };
+  const highlight = {
+    type: "highlight",
+    title: "Swanston Street",
+    subtitle: "Currently highlighted",
+    action: nowBarZoomToHighlights,
+  };
+  const community = {
+    type: "community",
+    title: "Community online",
+    subtitle: "Helping keep our CBD safe",
+    action: () => openChatModal(),
+  };
+
+  // Tutorial is always present and sits last in the rotation.
+  return [emergency, incident, highlight, community, tutorial];
+}
+
+function nowBarCreateCard(cfg) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "nb-card nb-card--" + cfg.type + (cfg.type === "emergency" ? " emergency-pill" : "");
+  btn.dataset.card = cfg.type;
+
+  const icon = document.createElement("span");
+  icon.className = "nb-icon" + (cfg.type === "emergency" ? " emergency-icon" : "");
+  icon.setAttribute("aria-hidden", "true");
+  icon.innerHTML = NB_ICONS[cfg.type] || "";
+
+  const body = document.createElement("span");
+  body.className = "nb-body";
+  const titleEl = document.createElement("span");
+  titleEl.className = "nb-title";
+  titleEl.textContent = cfg.title;
+  const subtitleEl = document.createElement("span");
+  subtitleEl.className = "nb-subtitle";
+  subtitleEl.textContent = cfg.subtitle;
+  body.append(titleEl, subtitleEl);
+
+  const chev = document.createElement("span");
+  chev.className = "nb-chevron";
+  chev.setAttribute("aria-hidden", "true");
+  chev.innerHTML = NB_CHEVRON;
+
+  btn.append(icon, body, chev);
+  btn.setAttribute("aria-label", cfg.title + ". " + cfg.subtitle);
+  return { ...cfg, el: btn, titleEl, subtitleEl };
+}
+
+// Refresh live counts on the cards (incidents nearby, community online).
+function nowBarRefreshDynamic() {
+  for (const card of nowBar.cards) {
+    if (card.type === "incident") {
+      const n = Array.isArray(incidents) ? incidents.length : 0;
+      card.titleEl.textContent = `${n} active incident${n === 1 ? "" : "s"} nearby`;
+    } else if (card.type === "community") {
+      const n = nowBarOnlineCount();
+      card.titleEl.textContent = `${n} member${n === 1 ? "" : "s"} online`;
+    }
+  }
+}
+
+function nowBarApplyStates(exitingIndex, dir) {
+  const n = nowBar.cards.length;
+  nowBar.cards.forEach((card, i) => {
+    card.el.classList.remove("is-active", "is-next", "is-prev");
+    if (i === nowBar.index) card.el.classList.add("is-active");
+    else if (i === (nowBar.index + 1) % n) card.el.classList.add("is-next");
+  });
+  // Forward motion: the outgoing card slides up and fades out.
+  // Backward motion: the outgoing card is already the new "next" (drops to peek).
+  if (dir === "next" && exitingIndex != null &&
+      exitingIndex !== nowBar.index && exitingIndex !== (nowBar.index + 1) % n) {
+    nowBar.cards[exitingIndex].el.classList.add("is-prev");
+  }
+}
+
+function nowBarSetIndex(newIndex, dir) {
+  const n = nowBar.cards.length;
+  if (n === 0) return;
+  const exiting = nowBar.index;
+  nowBar.index = ((newIndex % n) + n) % n;
+  nowBarRefreshDynamic();
+  nowBarApplyStates(exiting, dir);
+}
+
+function nowBarStartAuto() {
+  nowBarStopAuto();
+  if (nowBar.cards.length < 2) return;
+  nowBar.rotateTimer = setInterval(() => {
+    nowBarSetIndex(nowBar.index + 1, "next");
+  }, NOW_BAR_ROTATE_MS);
+}
+
+function nowBarStopAuto() {
+  if (nowBar.rotateTimer) { clearInterval(nowBar.rotateTimer); nowBar.rotateTimer = null; }
+}
+
+function nowBarScheduleResume() {
+  if (nowBar.resumeTimer) clearTimeout(nowBar.resumeTimer);
+  nowBar.resumeTimer = setTimeout(() => {
+    if (!nowBar.down) nowBarStartAuto();
+  }, NOW_BAR_RESUME_MS);
+}
+
+function nowBarUserInteracted() {
+  nowBarStopAuto();
+  nowBarScheduleResume();
+}
+
+function nowBarBuild() {
+  const stack = document.getElementById("now-bar-stack");
+  if (!stack) return;
+  nowBar.stack = stack;
+
+  const configs = nowBarCardConfigs();
+  nowBar.cards = configs.map(nowBarCreateCard);
+  nowBar.index = 0;
+
+  stack.replaceChildren(...nowBar.cards.map((c) => c.el));
+  nowBarRefreshDynamic();
+  nowBarApplyStates(null, null);
+  nowBarStartAuto();
+}
+
+function nowBarWireEvents() {
+  if (nowBar.wired) return;
+  const stack = document.getElementById("now-bar-stack");
+  if (!stack) return;
+  nowBar.wired = true;
+
+  // Tap the active card → run its action.
+  stack.addEventListener("click", (e) => {
+    const cardEl = e.target.closest(".nb-card");
+    if (!cardEl || !cardEl.classList.contains("is-active")) return;
+    if (nowBar.suppressClick) return;
+    const card = nowBar.cards.find((c) => c.el === cardEl);
+    if (!card) return;
+    nowBarUserInteracted();
+    try { card.action(); } catch (err) { console.error("Now Bar action failed:", err); }
+  });
+
+  // Vertical swipe → browse manually.
+  stack.addEventListener("pointerdown", (e) => {
+    nowBar.down = true;
+    nowBar.swiped = false;
+    nowBar.startX = e.clientX;
+    nowBar.startY = e.clientY;
+    nowBarStopAuto();
+  });
+  stack.addEventListener("pointermove", (e) => {
+    if (!nowBar.down) return;
+    const dy = e.clientY - nowBar.startY;
+    const dx = e.clientX - nowBar.startX;
+    if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) nowBar.swiped = true;
+  });
+  const endSwipe = (e) => {
+    if (!nowBar.down) return;
+    nowBar.down = false;
+    const dy = e.clientY - nowBar.startY;
+    const dx = e.clientX - nowBar.startX;
+    if (Math.abs(dy) >= NOW_BAR_SWIPE_PX && Math.abs(dy) > Math.abs(dx)) {
+      nowBar.suppressClick = true;
+      setTimeout(() => { nowBar.suppressClick = false; }, 360);
+      if (dy < 0) nowBarSetIndex(nowBar.index + 1, "next");
+      else nowBarSetIndex(nowBar.index - 1, "prev");
+    }
+    nowBarScheduleResume();
+  };
+  window.addEventListener("pointerup", endSwipe);
+  window.addEventListener("pointercancel", () => { nowBar.down = false; nowBarScheduleResume(); });
+
+  // Save battery while the tab is hidden.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) nowBarStopAuto();
+    else if (!nowBar.down) nowBarStartAuto();
+  });
+}
+
+function initNowBar() {
+  nowBarWireEvents();
+  nowBarBuild();
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
   loadUserReactions();
 
@@ -5671,6 +6051,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initHighlightStreetModal();
   initStreetNoteModal();
   initDesktopControls();
+  initNowBar();
   initPeerBroadcasting();
 
   await waitForBackend();
