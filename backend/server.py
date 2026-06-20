@@ -6,6 +6,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import hashlib
 import logging
 import secrets
 import time
@@ -77,7 +78,20 @@ def _validate_admin_config() -> None:
 
     if not _raw_jwt_secret:
         if IS_PRODUCTION:
-            problems.append("ADMIN_JWT_SECRET is not set (required in production).")
+            # Don't fail-closed here: a missing secret should not take the whole
+            # API down (that previously bricked report submission, flagging, and
+            # admin login on deploys where the dashboard env var wasn't set).
+            # Derive a STABLE secret from MONGO_URL (already a deployment secret)
+            # so issued admin tokens survive restarts. Strongly prefer setting an
+            # explicit ADMIN_JWT_SECRET in the dashboard.
+            ADMIN_JWT_SECRET = hashlib.sha256(
+                ("admin-jwt-v1:" + mongo_url).encode("utf-8")
+            ).hexdigest()
+            logger.warning(
+                "ADMIN_JWT_SECRET not set; deriving a stable fallback secret from "
+                "MONGO_URL. Set ADMIN_JWT_SECRET in the environment for a "
+                "dedicated, rotatable secret."
+            )
         else:
             ADMIN_JWT_SECRET = secrets.token_urlsafe(48)
             logger.warning(
