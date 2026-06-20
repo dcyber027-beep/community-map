@@ -2773,6 +2773,12 @@ body {
 
 /* ── Teardrop glass pins — give markers personality (Apple Maps style) ─────── */
 .map-pin-wrap { background: transparent !important; border: none !important; }
+
+/* Draggable "set a location" pin (report + street note wizards). Self-contained
+   SVG so it never depends on Leaflet's default marker image. */
+.drop-pin-wrap { background: transparent !important; border: none !important; }
+.drop-pin { line-height: 0; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.35)); cursor: grab; }
+.drop-pin:active { cursor: grabbing; }
 .leaflet-marker-icon .map-pin {
   position: relative;
   width: 34px;

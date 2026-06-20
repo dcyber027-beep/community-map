@@ -432,6 +432,26 @@ function createEmojiMarker(lat, lng, category, urgency) {
   return L.marker([lat, lng], { icon });
 }
 
+// Self-contained draggable pin for the "set a location" maps (report + street
+// note wizards). Uses an inline SVG divIcon instead of Leaflet's default marker
+// image, which 404s/breaks when the CDN image path can't be auto-detected.
+function createDraggablePinIcon() {
+  const html = `
+    <div class="drop-pin">
+      <svg viewBox="0 0 24 36" width="30" height="44" aria-hidden="true">
+        <path d="M12 0C5.37 0 0 5.37 0 12c0 8.25 12 24 12 24s12-15.75 12-24C24 5.37 18.63 0 12 0z" fill="#2563eb"/>
+        <circle cx="12" cy="12" r="5" fill="#ffffff"/>
+      </svg>
+    </div>`;
+  return L.divIcon({
+    className: "drop-pin-wrap",
+    html,
+    iconSize: [30, 44],
+    iconAnchor: [15, 44],
+    popupAnchor: [0, -40],
+  });
+}
+
 function humanTimeAgo(isoString) {
   if (!isoString) return "";
   const now = new Date();
@@ -1544,7 +1564,7 @@ async function reverseGeocode(lat, lng) {
 function setLocationMarker(lat, lng) {
   if (!locationMap) return;
   if (!locationMarker) {
-    locationMarker = L.marker([lat, lng], { draggable: true }).addTo(locationMap);
+    locationMarker = L.marker([lat, lng], { draggable: true, icon: createDraggablePinIcon() }).addTo(locationMap);
   } else {
     locationMarker.setLatLng([lat, lng]);
   }
@@ -3973,7 +3993,7 @@ function setDiscoveryMarker(lat, lng) {
   streetNoteLocation = { lat, lng };
   if (!discoveryLocationMap) return;
   if (!discoveryLocationMarker) {
-    discoveryLocationMarker = L.marker([lat, lng], { draggable: true }).addTo(discoveryLocationMap);
+    discoveryLocationMarker = L.marker([lat, lng], { draggable: true, icon: createDraggablePinIcon() }).addTo(discoveryLocationMap);
     discoveryLocationMarker.on("dragend", (e) => {
       const pos = e.target.getLatLng();
       streetNoteLocation = { lat: pos.lat, lng: pos.lng };
