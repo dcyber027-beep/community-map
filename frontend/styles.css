@@ -7169,3 +7169,160 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
   /* Slightly roomier on desktop to match the wider control islands */
   .now-bar { --nb-h: 66px; }
 }
+
+/* ── Report content action sheet (Apple-style) ─────────────────────────────── */
+:root {
+  --report-sheet-bg: rgba(255, 255, 255, 0.82);
+  --report-sheet-cancel-bg: rgba(255, 255, 255, 0.92);
+  --report-sheet-divider: rgba(60, 60, 67, 0.13);
+  --report-sheet-active: rgba(60, 60, 67, 0.1);
+  --report-sheet-chevron: rgba(60, 60, 67, 0.3);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --report-sheet-bg: rgba(44, 44, 46, 0.82);
+    --report-sheet-cancel-bg: rgba(44, 44, 46, 0.92);
+    --report-sheet-divider: rgba(255, 255, 255, 0.12);
+    --report-sheet-active: rgba(255, 255, 255, 0.08);
+    --report-sheet-chevron: rgba(235, 235, 245, 0.3);
+  }
+}
+
+.report-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0.6rem;
+  padding-bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px));
+  animation: reportSheetFade 0.2s ease;
+}
+
+.report-sheet {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  animation: reportSheetSlideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.report-sheet-group {
+  background: var(--report-sheet-bg);
+  border-radius: 16px;
+  overflow: hidden;
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: 0 10px 44px rgba(0, 0, 0, 0.22);
+}
+
+.report-sheet-head {
+  padding: 1.05rem 1.1rem 0.85rem;
+  text-align: center;
+  border-bottom: 0.5px solid var(--report-sheet-divider);
+}
+.report-sheet-head h3 {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ui-text);
+}
+.report-sheet-head p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ui-muted);
+}
+
+.report-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  padding: 0.78rem 1.05rem;
+  background: transparent;
+  border: none;
+  border-bottom: 0.5px solid var(--report-sheet-divider);
+  text-align: left;
+  color: var(--ui-text);
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.report-sheet-row:last-child { border-bottom: none; }
+.report-sheet-row:active,
+.report-sheet-row.is-selected { background: var(--report-sheet-active); }
+@media (hover: hover) {
+  .report-sheet-row:hover { background: var(--report-sheet-active); }
+}
+.report-sheet-row[disabled] { cursor: default; }
+.report-sheet-row[disabled]:not(.is-selected) { opacity: 0.45; }
+
+.report-sheet-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ui-text);
+}
+.report-sheet-icon svg { width: 23px; height: 23px; }
+
+.report-sheet-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+}
+.report-sheet-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.report-sheet-sub {
+  font-size: 0.78rem;
+  color: var(--ui-muted);
+  line-height: 1.25;
+}
+
+.report-sheet-chevron {
+  flex: none;
+  display: flex;
+  align-items: center;
+  color: var(--report-sheet-chevron);
+}
+.report-sheet-chevron svg { width: 15px; height: 15px; }
+
+.report-sheet-cancel {
+  width: 100%;
+  padding: 0.95rem;
+  border: none;
+  border-radius: 16px;
+  background: var(--report-sheet-cancel-bg);
+  color: var(--ui-blue, #2563eb);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: 0 10px 44px rgba(0, 0, 0, 0.22);
+  transition: background 0.12s ease;
+}
+.report-sheet-cancel:active { background: var(--report-sheet-active); }
+
+@keyframes reportSheetFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes reportSheetSlideUp {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .report-sheet { animation: reportSheetFade 0.2s ease; }
+}

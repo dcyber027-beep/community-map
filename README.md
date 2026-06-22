@@ -8,6 +8,10 @@ A community-driven safety and awareness web app for Melbourne. Users can report 
 
 ## Recent improvements
 
+- Shipped a **security hardening patch** (server-enforced admin JWTs, fail-closed config, per-IP rate limits, DOMPurify/CSP, spoof-resistant client IP) and a round of **bug fixes** — see the full [Changelog — security patch & bug fixes](#changelog--security-patch--bug-fixes) for the root causes and mitigations.
+- Fixed the production **"map freezes / goes grey on mobile"** bug: the service worker was caching cross-origin tiles and exhausting the mobile storage quota; it now caches **same-origin app files only** (`community-map-v35`).
+- **Expired street notes are now removed for good** on the client the moment they lapse (no more lingering "Expired" pins), while **resolved-but-unexpired** notes stay on the map.
+- Redesigned the **Report content** flow into an **Apple-style action sheet** (icon · title · subtitle · chevron rows, light/dark, one-tap submit).
 - Added a **Now Bar** at the top of the map — a rotating stack of contextual notification cards built on the existing Emergency banner (see [Now Bar](#now-bar--rotating-notifications)). One card shows at a time with the next peeking beneath; auto-rotates, swipeable, and works on phone + desktop.
 - Added a **content flagging & moderation** system (see [Flagging & moderation](#flagging--moderation)). Anyone can flag a misleading/wrong/abusive incident, street note, or chat message; admins review a queue and can **delete reports or street highlights by tapping them directly on the map**.
 - **Security & robustness hardening** — separated the public *flag content* flow from the *Report Incident* wizard (they previously collided on one function name), routed all moderation through the JWT-protected admin API, and kept reported-content previews injection-safe (`textContent`/DOM, never `innerHTML`).
@@ -32,8 +36,9 @@ A community-driven safety and awareness web app for Melbourne. Users can report 
 8. [Backend reference](#backend-reference)
 9. [Frontend reference](#frontend-reference)
 10. [Day-to-day workflow](#day-to-day-workflow)
-11. [Roadmap](#roadmap)
-12. [License & attribution](#license--attribution)
+11. [Changelog — security patch & bug fixes](#changelog--security-patch--bug-fixes)
+12. [Roadmap](#roadmap)
+13. [License & attribution](#license--attribution)
 
 ---
 
@@ -476,6 +481,164 @@ git commit -m "feat: short description"
 git push -u origin feat/your-feature
 # merge to main → auto-deploy
 ```
+
+---
+
+## Changelog — security patch & bug fixes
+
+This section is the detailed record of the **security hardening patch** and the
+**bug-fix work** that followed it. It complements the higher-level
+[Security hardening (Phase 0)](#security-hardening-phase-0) notes in the backend
+reference with the *why*, the root causes, and the exact mitigations shipped.
+
+### 1. Security patch (Phase 0 & 1)
+
+The original app trusted the client far too much: the "admin" gate was a purely
+client-side check, secrets lived in source, there were no rate limits, and
+user-generated content was rendered without sanitisation. The patch closed the
+whole class of issues below. All of it lives in `backend/server.py`,
+`frontend/_headers`, and `frontend/vendor/purify.min.js`.
+
+#### Admin authentication — real, server-enforced sessions
+- `POST /api/admin/verify` validates the **account + PIN** using
+  `secrets.compare_digest` (**constant-time**, so login timing can't leak how
+  much of the PIN was correct) and returns a short-lived **HS256 JWT**.
+- **Every** `/api/admin/*` route is protected by an `HTTPBearer`
+  `Depends(require_admin)` dependency that verifies the signature and expiry of
+  `Authorization: Bearer <token>`. The old "trust the browser" check is gone.
+- The frontend keeps the token in `sessionStorage`, attaches it via the
+  `adminFetch()` wrapper, and **transparently logs out on a 401** (expired or
+  invalid session).
+- Token lifetime is configurable via `ADMIN_TOKEN_TTL_HOURS` (default **12h**).
+
+#### Secret & configuration hygiene (fail-closed)
+- Secrets (`MONGO_URL`, `ADMIN_PIN`, `ADMIN_JWT_SECRET`, …) moved to environment
+  variables; `backend/.env` is git-ignored.
+- `ENVIRONMENT` defaults to **`production`**. In production the app **refuses to
+  boot** on an unsafe config — a missing `ADMIN_JWT_SECRET`, or an `ADMIN_PIN`
+  that is unset, the well-known default, or shorter than 6 characters. Set
+  `ENVIRONMENT=development` locally to relax this and boot with an **ephemeral**
+  dev secret.
+
+#### Rate limiting — every sensitive / mutating endpoint
+An in-memory **sliding-window** limiter keyed by *client IP + scope* returns
+**HTTP 429** (with a `Retry-After` hint) when a window is exceeded:
+
+| Scope | Limit | Endpoint |
+|-------|-------|----------|
+| `admin_verify` | 5 / 60s | `POST /api/admin/verify` |
+| `create_incident` | 10 / 60s | `POST /api/incidents` |
+| `react` | 30 / 60s | `POST /api/incidents/{id}/react` |
+| `heartbeat` | 60 / 60s | `POST /api/users/heartbeat/{id}` |
+| `chat` | 20 / 60s | `POST /api/chat/messages` |
+| `create_note` | 10 / 60s | `POST /api/street-notes` |
+| `peers` | 30 / 60s | `POST /api/peers` |
+| `report` | 10 / 60s | `POST /api/reports` |
+| `geocode` | 20 / 60s | `POST /api/geocode` |
+
+#### Spoof-resistant client-IP resolution
+Rate limiting reads the client IP from the **trusted (right-hand) side** of
+`X-Forwarded-For`, governed by `TRUSTED_PROXY_HOPS` (**1** on Render). This stops
+an attacker from prepending a forged leftmost IP to rotate identities and bypass
+the per-IP windows. `0` means no proxy (use the socket peer directly).
+
+#### Input validation
+Pydantic validators enforce **category / urgency / colour enums**, **lat/lng
+ranges**, **text-length caps**, and **safe image-URL schemes** on every write
+path, so malformed or oversized payloads are rejected at the edge.
+
+#### XSS defense (stored & reflected)
+- All untrusted text is escaped via `escapeHtml()` before insertion.
+- URLs pass through `safeUrl()` (scheme allowlist) before use in `href`/`src`.
+- Admin-authored HTML (the welcome notice) is sanitised with **DOMPurify**,
+  vendored at `frontend/vendor/purify.min.js`.
+- Moderation previews of reported content are built with `textContent` / DOM
+  nodes — **never** `innerHTML` — so flagged content can never execute in the
+  admin dashboard.
+
+#### Security headers + Content-Security-Policy
+- **Backend** responses carry `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy`, and a locked-down
+  `Permissions-Policy` (camera/mic off, geolocation scoped).
+- **Frontend** ships a strict CSP and hardening headers via Netlify
+  `frontend/_headers`: `default-src 'self'`; scripts limited to self + unpkg;
+  `object-src 'none'`; `base-uri 'self'`; `form-action 'self'`;
+  `frame-ancestors 'none'`; `upgrade-insecure-requests`; plus an explicit
+  `connect-src` / `img-src` allowlist for the API, map tiles, and geocoder.
+  Also `Cross-Origin-Opener-Policy: same-origin`.
+
+#### Locked-down CORS
+CORS is restricted to the real frontend origins, and `allow_headers` is narrowed
+to `Authorization` / `Content-Type`. (CORS only constrains browsers — not
+curl/bots — so it is treated as defence-in-depth, never the primary control.)
+
+### 2. Bug fixes
+
+#### Flag-vs-report function collision (data-integrity / UX)
+The public **flag content** flow and the **Report Incident** wizard collided on
+one function name, so flagging could open the wrong modal. The flagging path was
+renamed to **`openFlagModal`** and all **three** call sites updated (incident
+detail, street-note popup, chat message), fully separating community flagging
+from incident reporting.
+
+#### Now Bar rotating notifications
+Replaced the static emergency banner with a rotating, swipeable, peeking
+**Now Bar** card stack (auto-rotate, vertical swipe, `prefers-reduced-motion`
+aware). The **Tutorial** card is kept permanently and moved to the last
+position; the **Highlighted streets** card zooms the map to the CBD highlights.
+
+#### Admin tap-to-moderate
+When logged in as admin, incidents and street highlights can be **deleted
+directly from their map pin / polyline** (`DELETE /api/admin/incidents/{id}`,
+`DELETE /api/admin/street-highlights/{id}`) — no dashboard round-trip needed.
+
+#### Map "freezes / goes grey" on mobile after a second — **root cause fixed**
+The headline production bug. It was chased in stages:
+1. **First attempt** — dropped the first-time tutorial checker and reset the Now
+   Bar's stuck pointer flags on resume. Didn't fully fix it.
+2. **Second attempt** — added `recoverMapView()` (`map.invalidateSize()` +
+   `setView()`) wired to `pageshow` / `focus` / `visibilitychange` and the
+   loading overlay, to repair grey tiles on cold-start and bfcache restore.
+   Still froze on fresh phones.
+3. **Root cause (service worker)** — the SW was **caching cross-origin map
+   tiles**. Opaque cross-origin responses are stored with multi-MB padding, so
+   panning the map **exhausted the mobile storage quota within seconds**,
+   thrashing I/O and getting the tab throttled/killed. It only reproduced on
+   fresh phones because desktop/localhost have huge quotas.
+
+   **Fix:** the service worker now **only caches same-origin app files**
+   (`if (url.origin !== self.location.origin) return;`). Tiles, CDN scripts,
+   fonts, and geocoding bypass the SW entirely and use the browser's normal HTTP
+   cache. Bumping `CACHE_NAME` (now **`community-map-v35`**) purges the bloated
+   old cache on activation.
+
+#### Self-contained SVG location pin
+The location-picker pin no longer depends on an external image asset — it's an
+inline SVG, so it always renders even offline / before tiles load.
+
+#### Expired street notes are now removed for good (client-side)
+The backend already permanently deletes expired notes (a `delete_many` on each
+fetch plus a MongoDB **TTL index** on `expires_at`). But the frontend kept stale
+notes in memory between the 60-second refetches, so an expired note could linger
+on the map showing **"Expired"**. Added an `isNoteExpired()` guard that filters
+expired notes at the **data layer** (`fetchStreetNotes`) and at both **render
+layers** (`renderStreetNotes`, `filteredNotesForList`), so they disappear
+immediately. **Resolved ("problem solved") notes that haven't expired stay on
+the map** with their green badge; resolution does not extend a note's lifetime.
+
+#### Apple-style report (flagging) action sheet
+Redesigned the **Report content** modal from a centred card with radio buttons
+into an iOS-style **bottom action sheet**: a frosted, grouped list of
+icon · title · subtitle · chevron rows with a separate **Cancel** button.
+Tapping a reason submits immediately. It uses outline (SF-Symbol-style) SVG
+icons, supports light/dark via theme tokens, and animates with a slide-up
+(reduced-motion aware). The eight reasons still map 1:1 to the backend's
+`ALLOWED_REPORT_REASONS`.
+
+#### UI polish — emoji removed from wizard labels
+Dropped the decorative emoji from three discovery/helping-hand wizard labels
+(*"How long should this last?"*, *"Keep forever"*, *"Let people reach me"*) for
+a cleaner, more consistent aesthetic.
 
 ---
 

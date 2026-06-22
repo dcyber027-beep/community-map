@@ -313,6 +313,17 @@ function formatDurationText(hours) {
   return `${days}d ${remH}h`;
 }
 
+// A note is expired once its expires_at is in the past. Permanent notes
+// (forever / no expires_at) never expire. Expired notes are deleted for good
+// on the server (delete_many + TTL index); this mirrors that on the client so
+// they vanish immediately instead of lingering as "Expired" until the next
+// refetch. Resolved ("problem solved") notes are NOT expired by this check, so
+// they stay on the map as long as they haven't passed their expiry time.
+function isNoteExpired(note) {
+  if (!note || note.forever || !note.expires_at) return false;
+  return new Date(note.expires_at).getTime() <= Date.now();
+}
+
 function formatRemainingTime(expiresAt) {
   if (!expiresAt) return "Permanent";
   const expiry = new Date(expiresAt).getTime();
@@ -567,6 +578,8 @@ function filteredNotesForList() {
   // Notes have no urgency — hide them when an urgency filter is active
   if (urgencyMode) return [];
   return streetNotes.filter((note) => {
+    // Expired notes are deleted for good — keep them out of the list view too.
+    if (isNoteExpired(note)) return false;
     // Facility notes follow the Public Facilities toggle; others the Discoveries toggle
     const visible = isFacilityNote(note) ? showFacilities : showNotes;
     if (!visible) return false;
@@ -1119,16 +1132,30 @@ function notifyIfRateLimited(res, action) {
 
 // ── Content reporting (moderation) ────────────────────────────────────────────
 // Reasons must match the backend's ALLOWED_REPORT_REASONS set.
+// [value, title, subtitle, iconKey]
 const REPORT_REASONS = [
-  ["spam", "🚫 Spam or scam"],
-  ["harassment", "😠 Harassment or bullying"],
-  ["violence", "⚠️ Violence or threats"],
-  ["sexual", "🔞 Sexual or explicit content"],
-  ["hate", "💢 Hate speech"],
-  ["personal_info", "🔓 Shares private personal info"],
-  ["misinformation", "❌ False or misleading"],
-  ["other", "❓ Something else"],
+  ["spam", "Spam", "Unwanted or repetitive content", "spam"],
+  ["harassment", "Harassment", "Harassment, bullying or intimidation", "harassment"],
+  ["violence", "Threats or violence", "Threats, violence or dangerous behavior", "violence"],
+  ["sexual", "Explicit content", "Nudity, sexual content or graphic content", "explicit"],
+  ["hate", "Hate speech", "Hate speech or symbols", "hate"],
+  ["personal_info", "Privacy concern", "Sharing personal or sensitive information", "privacy"],
+  ["misinformation", "Misinformation", "False or misleading information", "misinfo"],
+  ["other", "Other", "Something else", "other"],
 ];
+
+// Outline (SF-Symbol-style) icons for each report reason row.
+const REPORT_REASON_ICONS = {
+  spam: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5.7" y1="5.7" x2="18.3" y2="18.3"/></svg>',
+  harassment: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.2" r="3.4"/><path d="M5.5 19.2a6.5 6.5 0 0 1 13 0"/></svg>',
+  violence: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6 21.5 20H2.5z"/><line x1="12" y1="9.5" x2="12" y2="14"/><line x1="12" y1="16.7" x2="12" y2="16.8"/></svg>',
+  explicit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12s3.4-6 9-6 9 6 9 6-3.4 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.6"/><line x1="4" y1="3.8" x2="20" y2="20.2"/></svg>',
+  hate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 5.5h15v10h-9l-4.5 3.5v-3.5h-1.5z"/></svg>',
+  privacy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4.8" y="10.3" width="14.4" height="9.4" rx="2.2"/><path d="M8 10.3V7.6a4 4 0 0 1 8 0v2.7"/></svg>',
+  misinfo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 11.4a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.4-5.3a7.5 7.5 0 1 1 15.1-2.8z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="14.6" x2="12" y2="14.7"/></svg>',
+  other: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="8" cy="12" r="0.5" fill="currentColor"/><circle cx="12" cy="12" r="0.5" fill="currentColor"/><circle cx="16" cy="12" r="0.5" fill="currentColor"/></svg>',
+};
+const REPORT_CHEVRON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 5 16 12 9 19"/></svg>';
 
 // Opens a lightweight modal letting a user flag a piece of content for review.
 // This is SEPARATE from the "Report Incident" wizard (openReportModal): flagging
@@ -1141,75 +1168,49 @@ function openFlagModal(targetType, targetId) {
 
   const overlay = document.createElement("div");
   overlay.id = "report-content-overlay";
+  overlay.className = "report-sheet-overlay";
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
-  overlay.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;padding:1rem;";
+  overlay.setAttribute("aria-label", "Report content");
 
-  const card = document.createElement("div");
-  card.style.cssText = "background:var(--ui-bg,#fff);color:var(--ui-text,#111);max-width:360px;width:100%;border-radius:14px;padding:1.1rem;box-shadow:0 12px 40px rgba(0,0,0,0.35);max-height:90vh;overflow:auto;";
+  const rowsHtml = REPORT_REASONS.map(([val, title, subtitle, iconKey]) => `
+    <button type="button" class="report-sheet-row" data-reason="${val}">
+      <span class="report-sheet-icon">${REPORT_REASON_ICONS[iconKey] || ""}</span>
+      <span class="report-sheet-label">
+        <span class="report-sheet-title">${escapeHtml(title)}</span>
+        <span class="report-sheet-sub">${escapeHtml(subtitle)}</span>
+      </span>
+      <span class="report-sheet-chevron">${REPORT_CHEVRON_SVG}</span>
+    </button>`).join("");
 
-  const heading = document.createElement("h3");
-  heading.textContent = "Report content";
-  heading.style.cssText = "margin:0 0 0.25rem;font-size:1.05rem;";
-  const sub = document.createElement("p");
-  sub.textContent = "Tell us what's wrong. Our moderators will review it.";
-  sub.style.cssText = "margin:0 0 0.75rem;font-size:0.8rem;color:var(--ui-muted,#666);";
-  card.appendChild(heading);
-  card.appendChild(sub);
+  overlay.innerHTML = `
+    <div class="report-sheet" role="document">
+      <div class="report-sheet-group">
+        <div class="report-sheet-head">
+          <h3>Report content</h3>
+          <p>Help keep CommunitySafe safe for everyone.</p>
+        </div>
+        ${rowsHtml}
+      </div>
+      <button type="button" class="report-sheet-cancel">Cancel</button>
+    </div>`;
 
-  let selectedReason = null;
-  const reasonsWrap = document.createElement("div");
-  reasonsWrap.style.cssText = "display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.75rem;";
+  let submitting = false;
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    overlay.remove();
+  };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
 
-  const submitBtn = document.createElement("button");
-
-  REPORT_REASONS.forEach(([val, label]) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.textContent = label;
-    b.style.cssText = "text-align:left;padding:0.55rem 0.7rem;border:1px solid var(--ui-border,#ddd);border-radius:8px;background:transparent;color:inherit;font-size:0.85rem;cursor:pointer;";
-    b.addEventListener("click", () => {
-      selectedReason = val;
-      reasonsWrap.querySelectorAll("button").forEach((x) => {
-        x.style.background = "transparent";
-        x.style.borderColor = "var(--ui-border,#ddd)";
-      });
-      b.style.background = "rgba(59,130,246,0.15)";
-      b.style.borderColor = "#3b82f6";
-      submitBtn.disabled = false;
-    });
-    reasonsWrap.appendChild(b);
-  });
-  card.appendChild(reasonsWrap);
-
-  const details = document.createElement("textarea");
-  details.placeholder = "Optional details (max 500 characters)";
-  details.maxLength = 500;
-  details.style.cssText = "width:100%;box-sizing:border-box;min-height:54px;border:1px solid var(--ui-border,#ddd);border-radius:8px;padding:0.5rem;font-size:0.85rem;resize:vertical;background:transparent;color:inherit;margin-bottom:0.75rem;";
-  card.appendChild(details);
-
-  const actions = document.createElement("div");
-  actions.style.cssText = "display:flex;gap:0.5rem;justify-content:flex-end;";
-  const cancelBtn = document.createElement("button");
-  cancelBtn.type = "button";
-  cancelBtn.textContent = "Cancel";
-  cancelBtn.style.cssText = "padding:0.5rem 0.9rem;border:1px solid var(--ui-border,#ddd);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font-size:0.85rem;";
-  submitBtn.type = "button";
-  submitBtn.textContent = "Submit report";
-  submitBtn.disabled = true;
-  submitBtn.style.cssText = "padding:0.5rem 0.9rem;border:none;border-radius:8px;background:#dc2626;color:#fff;cursor:pointer;font-size:0.85rem;font-weight:600;";
-  actions.appendChild(cancelBtn);
-  actions.appendChild(submitBtn);
-  card.appendChild(actions);
-
-  const close = () => overlay.remove();
-  cancelBtn.addEventListener("click", close);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector(".report-sheet-cancel").addEventListener("click", close);
 
-  submitBtn.addEventListener("click", async () => {
-    if (!selectedReason) return;
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Submitting…";
+  const submitReport = async (reason, rowEl) => {
+    if (submitting) return;
+    submitting = true;
+    overlay.querySelectorAll(".report-sheet-row").forEach((r) => { r.disabled = true; });
+    if (rowEl) rowEl.classList.add("is-selected");
     try {
       const res = await fetch(`${API_BASE}/reports`, {
         method: "POST",
@@ -1217,27 +1218,30 @@ function openFlagModal(targetType, targetId) {
         body: JSON.stringify({
           target_type: targetType,
           target_id: targetId,
-          reason: selectedReason,
-          details: details.value.trim(),
+          reason,
+          details: "",
         }),
       });
       if (res.status === 429) {
         notifyIfRateLimited(res, "reporting");
-        submitBtn.disabled = false;
-        submitBtn.textContent = "Submit report";
+        close();
         return;
       }
       if (!res.ok) throw new Error("failed");
       close();
       showToast("🚩 Thanks — our moderators will review this.");
     } catch (e) {
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Submit report";
+      submitting = false;
+      overlay.querySelectorAll(".report-sheet-row").forEach((r) => { r.disabled = false; });
+      if (rowEl) rowEl.classList.remove("is-selected");
       showToast("Could not submit report. Please try again.");
     }
+  };
+
+  overlay.querySelectorAll(".report-sheet-row").forEach((row) => {
+    row.addEventListener("click", () => submitReport(row.dataset.reason, row));
   });
 
-  overlay.appendChild(card);
   document.body.appendChild(overlay);
 }
 
@@ -3321,7 +3325,10 @@ async function fetchStreetNotes() {
   try {
     const response = await fetch(`${API_BASE}/street-notes`);
     if (response.ok) {
-      streetNotes = await response.json();
+      const all = await response.json();
+      // Drop expired notes immediately (the server also deletes them for good);
+      // resolved-but-unexpired notes are kept and stay on the map.
+      streetNotes = all.filter((n) => !isNoteExpired(n));
       renderStreetNotes();
       renderList();
     }
@@ -3521,6 +3528,9 @@ function renderStreetNotes() {
   streetNotesLayer.clearLayers();
 
   streetNotes.forEach((note) => {
+    // Expired notes are gone for good — never draw them, even if one expired
+    // since the last refetch.
+    if (isNoteExpired(note)) return;
     // Facility notes follow the Public Facilities toggle; everything else
     // follows the Discoveries toggle.
     if (isFacilityNote(note) ? !showPublicFacilities : !showStreetNotes) return;
