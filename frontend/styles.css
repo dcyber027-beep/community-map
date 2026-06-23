@@ -7170,6 +7170,17 @@ body:has(#view-list.view-container.active) .app-shell > #collapsible-header .liv
   .now-bar { --nb-h: 66px; }
 }
 
+/* Cloudflare Turnstile (CAPTCHA) holder — centres the widget in forms/wizards */
+.turnstile-holder {
+  display: flex;
+  justify-content: center;
+  margin: 0.75rem 0;
+  min-height: 65px;
+}
+.turnstile-holder:empty {
+  display: none;
+}
+
 /* ── Report content action sheet (Apple-style) ─────────────────────────────── */
 :root {
   --report-sheet-bg: rgba(255, 255, 255, 0.82);

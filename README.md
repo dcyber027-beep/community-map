@@ -9,6 +9,7 @@ A community-driven safety and awareness web app for Melbourne. Users can report 
 ## Recent improvements
 
 - Shipped a **security hardening patch** (server-enforced admin JWTs, fail-closed config, per-IP rate limits, DOMPurify/CSP, spoof-resistant client IP) and a round of **bug fixes** — see the full [Changelog — security patch & bug fixes](#changelog--security-patch--bug-fixes) for the root causes and mitigations.
+- Shipped a **scalability & operations pass (Phase 2)**: map-bounds + paginated list queries with a compound `(latitude, longitude)` index, **Cloudinary** image object-storage (signed uploads — only the URL is stored, not base64), **Cloudflare Turnstile** CAPTCHA on the abused write paths, and request-timing/slow-endpoint **observability** middleware — see [Scale & operations (Phase 2)](#3-scale--operations-phase-2).
 - Fixed the production **"map freezes / goes grey on mobile"** bug: the service worker was caching cross-origin tiles and exhausting the mobile storage quota; it now caches **same-origin app files only** (`community-map-v35`).
 - **Expired street notes are now removed for good** on the client the moment they lapse (no more lingering "Expired" pins), while **resolved-but-unexpired** notes stay on the map.
 - Redesigned the **Report content** flow into an **Apple-style action sheet** (icon · title · subtitle · chevron rows, light/dark, one-tap submit).
@@ -336,6 +337,22 @@ ADMIN_TOKEN_TTL_HOURS=12
 # Trusted reverse-proxy hops for client-IP resolution in rate limiting.
 # Render = 1 (real client IP is the LAST X-Forwarded-For entry). 0 = no proxy.
 TRUSTED_PROXY_HOPS=1
+# Requests slower than this (ms) are logged at WARNING (observability).
+SLOW_REQUEST_MS=1500
+# ── Cloudinary (image object storage) ──────────────────────────────────────
+# Leave unset to disable uploads (frontend then falls back to inline base64).
+# When set, the browser uploads images directly to Cloudinary via a signed
+# request and only the resulting https URL is stored in MongoDB.
+CLOUDINARY_CLOUD_NAME=your-cloud-name
+CLOUDINARY_API_KEY=your-api-key
+CLOUDINARY_API_SECRET=your-api-secret
+CLOUDINARY_UPLOAD_FOLDER=commap
+# ── Cloudflare Turnstile (CAPTCHA) ─────────────────────────────────────────
+# Backend secret key. When set, incident-create, note-create, and admin-verify
+# require a valid Turnstile token in the CF-Turnstile-Token header. Leave unset
+# to disable (local dev). The PUBLIC site key lives in frontend/app.js
+# (TURNSTILE_SITE_KEY).
+TURNSTILE_SECRET=your-turnstile-secret-key
 ```
 
 ```bash
@@ -380,17 +397,18 @@ All routes under `/api`. Interactive docs at `/docs`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/` | Health check |
+| GET | `/api/` | Health check (also returns the `X-Response-Time-ms` header) |
 | POST | `/api/geocode` | Nominatim geocoding |
-| GET | `/api/incidents?hours=` | List incidents (purges > 6h) |
-| POST | `/api/incidents` | Create incident |
+| GET | `/api/incidents?hours=&min_lat=&min_lng=&max_lat=&max_lng=&limit=` | List incidents (purges > 6h). Optional **bbox** + **limit** (see [Scale & operations](#3-scale--operations-phase-2)) |
+| POST | `/api/incidents` | Create incident (Turnstile-gated when configured) |
 | POST | `/api/incidents/{id}/react` | 👍 / 👎 |
 | POST | `/api/users/heartbeat/{session_id}` | Active-user count |
-| GET/POST | `/api/chat/messages` | Group chat |
+| GET/POST | `/api/chat/messages?before=&limit=` | Group chat (cursor pagination via `before`) |
 | GET | `/api/live-updates` | Banner text |
 | GET | `/api/street-highlights` | Admin polylines |
-| GET/POST | `/api/street-notes` | Community tips |
+| GET/POST | `/api/street-notes?min_lat=&min_lng=&max_lat=&max_lng=&limit=` | Community tips. Optional **bbox** + **limit**; create is Turnstile-gated when configured |
 | POST | `/api/reports` | Flag content for moderation (incident / note / chat) |
+| POST | `/api/uploads/sign` | Returns a short-lived **Cloudinary** signature for a direct browser upload (no-op response when Cloudinary is unconfigured) |
 | GET | `/api/welcome-notice` | Welcome popup HTML |
 | POST | `/api/peers` | Upsert live avatar location |
 | GET | `/api/peers` | List active peers (60s TTL) |
@@ -464,7 +482,8 @@ delete, welcome-notice update, chat pin, and **moderation**:
 | Layer toggles | `addNotesToggle()` — `showStreetNotes`, `showCityFountains`, `showCityToilets` |
 | List filtering | `getListFilterState()`, `LIST_UTILITY_NOTE_EMOJIS` for 💧/🚽 in aggregates |
 | Theme | CSS variables + `@media (prefers-color-scheme: dark)` |
-| Images | Canvas resize/compress before base64 upload |
+| Images | Canvas resize/compress, then **signed direct upload to Cloudinary** (`/api/uploads/sign`) storing only the https URL; falls back to inline base64 if Cloudinary is unconfigured. Legacy base64 images are grandfathered |
+| CAPTCHA | **Cloudflare Turnstile** widget (`TURNSTILE_SITE_KEY`) on incident/note create + admin verify; token sent as `CF-Turnstile-Token`. Auto-skipped on `localhost` |
 | Cold start | Loading overlay if backend > ~1s |
 | PWA | `manifest.json` + `sw.js` network-first for `/api` |
 
@@ -640,6 +659,74 @@ Dropped the decorative emoji from three discovery/helping-hand wizard labels
 (*"How long should this last?"*, *"Keep forever"*, *"Let people reach me"*) for
 a cleaner, more consistent aesthetic.
 
+### 3. Scale & operations (Phase 2)
+
+Phase 0 was "stop dangerous things" and Phase 1 was "make it stable." Phase 2 is
+about **surviving real traffic**: keeping payloads small, moving heavy blobs out
+of the database, blunting automated abuse, and being able to *see* what the
+backend is doing. All of it is **backward-compatible** — every new parameter is
+optional and every external service degrades gracefully when its credentials are
+absent.
+
+#### Map-bounds + pagination on list endpoints
+`GET /api/incidents` and `GET /api/street-notes` now accept an optional bounding
+box (`min_lat`, `min_lng`, `max_lat`, `max_lng`) and a `limit` (clamped
+server-side), so a client can fetch **only the pins in the current viewport**
+instead of the whole collection. `GET /api/chat/messages` gained `before` +
+`limit` cursor pagination. With no params the responses are unchanged, so
+existing clients keep working while the frontend can adopt bounds-based loading
+as data volume grows.
+
+- `_bbox_filter(...)` builds the Mongo range query from the four bbox params (all
+  four required together, else ignored).
+- `_clamp_limit(...)` bounds the page size to a sane maximum to prevent a client
+  from requesting the entire collection in one call.
+
+#### Geospatial / compound indexing
+Added compound **`(latitude, longitude)`** indexes on the `incidents` and
+`street_notes` collections so the new bbox range scans stay fast as the data
+grows (a stepping stone toward a full `2dsphere` index later). These are created
+idempotently in `ensure_indexes()` on startup alongside the existing
+`id` / `timestamp` / `expires_at` / TTL indexes.
+
+#### Cloudinary image object storage (signed direct upload)
+Images previously lived as **base64 inside MongoDB**, bloating documents and
+every list response. Now:
+
+- The browser compresses the image, calls **`POST /api/uploads/sign`** for a
+  short-lived signature (HMAC-SHA1 over the upload params + the server-only
+  `CLOUDINARY_API_SECRET`), and uploads **directly to Cloudinary** — the bytes
+  never touch our backend.
+- Only the resulting **https URL** is stored in the document.
+- If `CLOUDINARY_*` env vars are **unset**, the signing endpoint reports it and
+  the frontend transparently falls back to the old inline-base64 path, so local
+  dev and unconfigured deployments still work.
+- Existing base64 images are **grandfathered** — `resolveImageUrl()` on the
+  client handles both a Cloudinary URL and a legacy data URI.
+
+#### Cloudflare Turnstile (CAPTCHA) on abused write paths
+A privacy-friendly CAPTCHA now gates the three most-abusable writes —
+**incident create**, **street-note / helping-hand create**, and
+**admin verify**. The frontend renders the Turnstile widget
+(`TURNSTILE_SITE_KEY`) and sends the token in a **`CF-Turnstile-Token`** header;
+the backend's `verify_turnstile` dependency validates it against Cloudflare with
+`aiohttp`. When `TURNSTILE_SECRET` is unset (e.g. local dev) verification is
+skipped, and the widget auto-skips on `localhost`, keeping local iteration
+friction-free.
+
+#### Observability — request timing + slow-endpoint logging
+A `RequestTimingMiddleware` measures every request, attaches an
+**`X-Response-Time-ms`** response header (exposed through CORS), and logs any
+request slower than `SLOW_REQUEST_MS` (default **1500 ms**) at `WARNING` plus
+unhandled errors — enough to spot a degrading endpoint without standing up a
+full APM. The existing `GET /api/` doubles as an **UptimeRobot** health check;
+an always-on Render plan to eliminate cold starts is deferred by choice.
+
+#### Local verification
+This phase was smoke-tested end-to-end against the live Atlas cluster: health +
+the new timing header, a real signed **Cloudinary upload** round-trip, and the
+**bbox/limit** params returning the correct subset of pins.
+
 ---
 
 ## Roadmap
@@ -654,7 +741,8 @@ a cleaner, more consistent aesthetic.
 ### Medium term
 
 - Web Push for nearby high-urgency incidents (opt-in)
-- MongoDB `2dsphere` for server-side geo queries at scale
+- Wire the frontend to load pins by **visible map bounds** + paginate the list/chat (backend already supports the bbox/`limit`/`before` params)
+- Upgrade the compound `(lat, lng)` index to a full MongoDB **`2dsphere`** for richer server-side geo queries at scale
 - User accounts (magic link / OAuth) for editing own posts
 - Heatmap mode for incident density
 

@@ -4,6 +4,113 @@ const API_BASE = window.location.hostname === 'localhost' || window.location.hos
   ? "http://localhost:8000/api" 
   : "https://community-map.onrender.com/api";
 
+// ── Cloudflare Turnstile (CAPTCHA) ────────────────────────────────────────────
+// Public site key (safe to ship). The secret lives only on the backend. When a
+// widget can't produce a token (script blocked / not configured) we fall back to
+// submitting without one — the backend enforces it only when TURNSTILE_SECRET is
+// set, so local dev keeps working.
+const TURNSTILE_SITE_KEY = "0x4AAAAAADph95sYR-J7CL_B";
+const _turnstileWidgets = {}; // containerId -> widget id
+
+// CAPTCHA is a production concern: skip it on localhost so local dev posting is
+// frictionless (the backend likewise only enforces when TURNSTILE_SECRET is set).
+function _turnstileActiveHere() {
+  const h = window.location.hostname;
+  return h !== "localhost" && h !== "127.0.0.1";
+}
+
+function _turnstileReady() {
+  return typeof window.turnstile !== "undefined" && window.turnstile;
+}
+
+// Render (once) a Turnstile widget into the given container. Safe to call every
+// time a form/step becomes visible; it no-ops if already rendered. If the
+// async Turnstile script hasn't loaded yet, it retries briefly.
+function ensureTurnstile(containerId, _attempt = 0) {
+  if (!_turnstileActiveHere()) return;
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (_turnstileWidgets[containerId] != null) return;
+  if (!_turnstileReady()) {
+    if (_attempt < 20) setTimeout(() => ensureTurnstile(containerId, _attempt + 1), 250);
+    return;
+  }
+  try {
+    _turnstileWidgets[containerId] = window.turnstile.render(el, {
+      sitekey: TURNSTILE_SITE_KEY,
+      theme: "auto",
+      size: "flexible",
+    });
+  } catch (e) {
+    // Already rendered or transient error — ignore; getTurnstileToken handles absence.
+  }
+}
+
+function getTurnstileToken(containerId) {
+  const id = _turnstileWidgets[containerId];
+  if (id == null || !_turnstileReady()) return "";
+  try {
+    return window.turnstile.getResponse(id) || "";
+  } catch (e) {
+    return "";
+  }
+}
+
+function resetTurnstile(containerId) {
+  const id = _turnstileWidgets[containerId];
+  if (id == null || !_turnstileReady()) return;
+  try { window.turnstile.reset(id); } catch (e) { /* ignore */ }
+}
+
+// Merge the Turnstile token into a fetch headers object when present.
+function withTurnstileHeader(headers, containerId) {
+  const token = getTurnstileToken(containerId);
+  return token ? { ...headers, "CF-Turnstile-Token": token } : headers;
+}
+
+// ── Cloudinary image upload (signed, direct browser → Cloudinary) ─────────────
+// Asks the backend for a one-time signature, then uploads the (already
+// compressed) image straight to Cloudinary and returns its secure https URL.
+// Returns null if uploads aren't configured (HTTP 503) or on failure, so callers
+// can grandfather/fallback to the inline data URL.
+async function uploadImageToCloudinary(dataUrl) {
+  if (!dataUrl) return null;
+  let sign;
+  try {
+    const res = await fetch(`${API_BASE}/uploads/sign`, { method: "POST" });
+    if (res.status === 503) return null; // uploads not configured → fallback
+    if (!res.ok) throw new Error(`sign failed: ${res.status}`);
+    sign = await res.json();
+  } catch (e) {
+    console.warn("Could not get upload signature:", e);
+    return null;
+  }
+  try {
+    const form = new FormData();
+    form.append("file", dataUrl);
+    form.append("api_key", sign.api_key);
+    form.append("timestamp", sign.timestamp);
+    form.append("signature", sign.signature);
+    form.append("folder", sign.folder);
+    const uploadUrl = `https://api.cloudinary.com/v1_1/${sign.cloud_name}/image/upload`;
+    const up = await fetch(uploadUrl, { method: "POST", body: form });
+    if (!up.ok) throw new Error(`upload failed: ${up.status}`);
+    const data = await up.json();
+    return data.secure_url || null;
+  } catch (e) {
+    console.warn("Cloudinary upload failed:", e);
+    return null;
+  }
+}
+
+// Resolve the image_url to store: upload to Cloudinary when possible, otherwise
+// fall back to the inline (base64) data URL so posting never hard-fails.
+async function resolveImageUrl(dataUrl) {
+  if (!dataUrl) return "";
+  const url = await uploadImageToCloudinary(dataUrl);
+  return url || dataUrl;
+}
+
 // Melbourne CBD approximate centre
 const MELBOURNE_CBD = {
   lat: -37.8136,
@@ -1064,32 +1171,42 @@ async function submitReport() {
   }
 
   const { lat, lng } = locationMarker.getLatLng();
-  const payload = {
-    category: reportWizardData.category || 'other',
-    urgency: reportWizardData.urgency || 'medium',
-    description: reportWizardData.description || '',
-    image_url: reportWizardData.photoDataUrl || '',
-    latitude: lat,
-    longitude: lng,
-  };
-
-  if (reportWizardData.identityMode === "verified") {
-    if (email) payload.contact_email = email;
-    if (phone) payload.contact_phone = phone;
-  }
 
   const submitBtn = document.getElementById("submit-report");
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting…'; }
 
   try {
+    // Upload the photo to object storage first; falls back to inline data URL
+    // if Cloudinary isn't configured.
+    const imageUrl = await resolveImageUrl(reportWizardData.photoDataUrl || '');
+
+    const payload = {
+      category: reportWizardData.category || 'other',
+      urgency: reportWizardData.urgency || 'medium',
+      description: reportWizardData.description || '',
+      image_url: imageUrl,
+      latitude: lat,
+      longitude: lng,
+    };
+
+    if (reportWizardData.identityMode === "verified") {
+      if (email) payload.contact_email = email;
+      if (phone) payload.contact_phone = phone;
+    }
+
     const res = await fetch(`${API_BASE}/incidents`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withTurnstileHeader({ "Content-Type": "application/json" }, 'report-turnstile'),
       body: JSON.stringify(payload),
     });
     if (res.status === 429) {
       notifyIfRateLimited(res, 'reporting');
+      resetTurnstile('report-turnstile');
       return;
+    }
+    if (res.status === 400 || res.status === 403) {
+      resetTurnstile('report-turnstile');
+      throw new Error("Please complete the verification and try again.");
     }
     if (!res.ok) throw new Error("Failed to submit report");
     await fetchIncidents();
@@ -1098,7 +1215,8 @@ async function submitReport() {
     showToast('✅ Incident reported — thank you!');
   } catch (e) {
     console.error(e);
-    alert("There was a problem submitting your report. Please try again.");
+    resetTurnstile('report-turnstile');
+    alert(e && e.message ? e.message : "There was a problem submitting your report. Please try again.");
   } finally {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit Report'; }
   }
@@ -1353,8 +1471,11 @@ function goToReportStep(step) {
   updateReportBackBtn();
   // Refresh location map when arriving at step 2
   if (step === 2) { setTimeout(() => { if (locationMap) locationMap.invalidateSize(); }, 200); }
-  // Populate review card when arriving at step 5
-  if (step === 5) buildReportReviewCard();
+  // Populate review card + render the CAPTCHA when arriving at step 5
+  if (step === 5) {
+    buildReportReviewCard();
+    ensureTurnstile('report-turnstile');
+  }
 }
 
 function buildReportReviewCard() {
@@ -1779,7 +1900,7 @@ async function updateActiveUsersCount() {
 async function verifyAdmin(account, pin) {
   const res = await fetch(`${API_BASE}/admin/verify`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: withTurnstileHeader({ "Content-Type": "application/json" }, 'admin-turnstile'),
     body: JSON.stringify({ account, pin }),
   });
   if (res.status === 429) {
@@ -1787,9 +1908,15 @@ async function verifyAdmin(account, pin) {
     const wait = Number.isFinite(secs) && secs > 0 ? secs : 60;
     const err = new Error(`Too many attempts. Please wait ${wait}s and try again.`);
     err.isRateLimit = true;
+    resetTurnstile('admin-turnstile');
     throw err;
   }
+  if (res.status === 400 || res.status === 403) {
+    resetTurnstile('admin-turnstile');
+    throw new Error("Please complete the verification and try again.");
+  }
   if (!res.ok) {
+    resetTurnstile('admin-turnstile');
     throw new Error("Invalid admin credentials");
   }
   const data = await res.json();
@@ -2699,7 +2826,10 @@ function initAdminModal() {
         tapCount = 0;
         adminModal.classList.remove("hidden");
         adminModal.setAttribute("aria-hidden", "false");
-        if (!isAdminLoggedIn) setupAdminLoginForm();
+        if (!isAdminLoggedIn) {
+          setupAdminLoginForm();
+          ensureTurnstile('admin-turnstile');
+        }
       }
     });
   }
@@ -3768,7 +3898,10 @@ function goToDiscoveryStep(step) {
       }
     }, 250);
   }
-  if (step === 4) buildDiscoveryReviewCard();
+  if (step === 4) {
+    buildDiscoveryReviewCard();
+    ensureTurnstile('discovery-turnstile');
+  }
 }
 
 function buildDiscoveryReviewCard() {
@@ -3937,15 +4070,18 @@ async function submitStreetNote() {
   const contactPublic = helping && !!discoveryWizardData.contactPublic;
 
   try {
+    // Upload the photo to object storage first; falls back to inline data URL.
+    const imageUrl = await resolveImageUrl(discoveryWizardData.photoDataUrl || "");
+
     const response = await fetch(`${API_BASE}/street-notes`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withTurnstileHeader({ "Content-Type": "application/json" }, 'discovery-turnstile'),
       body: JSON.stringify({
         text,
         latitude: lat,
         longitude: lng,
         location_text: locationText,
-        image_url: discoveryWizardData.photoDataUrl || "",
+        image_url: imageUrl,
         emoji: discoveryWizardData.emoji || null,
         duration_hours: noteForever ? null : noteDurationHours,
         forever: noteForever,
@@ -3965,7 +4101,11 @@ async function submitStreetNote() {
       showToast(helping ? '🖐 Helping Hand posted!' : '📍 Discovery posted!');
     } else if (response.status === 429) {
       notifyIfRateLimited(response, 'posting');
+      resetTurnstile('discovery-turnstile');
       return;
+    } else if (response.status === 400 || response.status === 403) {
+      resetTurnstile('discovery-turnstile');
+      throw new Error("Please complete the verification and try again.");
     } else {
       const errText = await response.text();
       throw new Error(`Failed to post: ${response.status} ${errText}`);

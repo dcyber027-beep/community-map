@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
+import aiohttp
 import os
 import hashlib
 import logging
@@ -64,6 +65,28 @@ _raw_jwt_secret = os.environ.get("ADMIN_JWT_SECRET")
 ADMIN_JWT_SECRET = _raw_jwt_secret
 ADMIN_JWT_ALGORITHM = "HS256"
 ADMIN_TOKEN_TTL_HOURS = int(os.environ.get("ADMIN_TOKEN_TTL_HOURS", "12"))
+
+# ── Cloudinary (image object storage) ─────────────────────────────────────────
+# Signed direct-to-Cloudinary uploads: the browser uploads the file straight to
+# Cloudinary using a short-lived signature minted here, so large image payloads
+# never touch this server and anonymous uploads are blocked. Only the resulting
+# secure_url is stored in Mongo. Existing base64 images are grandfathered. Leave
+# the vars unset to disable uploads (the sign endpoint then returns 503).
+CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "").strip()
+CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "").strip()
+CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "").strip()
+CLOUDINARY_UPLOAD_FOLDER = os.environ.get("CLOUDINARY_UPLOAD_FOLDER", "commap").strip()
+CLOUDINARY_ENABLED = bool(
+    CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET
+)
+
+# ── Cloudflare Turnstile (CAPTCHA) ────────────────────────────────────────────
+# When TURNSTILE_SECRET is set, the gated write endpoints (incident create, note
+# create, admin verify) require a valid Turnstile token in the
+# `CF-Turnstile-Token` request header. Leave unset to disable (e.g. local dev).
+TURNSTILE_SECRET = os.environ.get("TURNSTILE_SECRET", "").strip()
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+TURNSTILE_ENABLED = bool(TURNSTILE_SECRET)
 
 
 def _validate_admin_config() -> None:
@@ -231,7 +254,109 @@ def rate_limit(scope: str, max_requests: int, window_seconds: int):
     return _dependency
 
 
+# ── Cloudinary signed-upload helper ───────────────────────────────────────────
+def _cloudinary_sign(params: Dict[str, str]) -> str:
+    """
+    Build a Cloudinary upload signature: take the params to sign, sort by key,
+    join as `k=v` with `&`, append the API secret, and SHA-1 hex digest it.
+    """
+    to_sign = "&".join(
+        f"{k}={params[k]}" for k in sorted(params) if params[k] not in (None, "")
+    )
+    return hashlib.sha1(
+        (to_sign + CLOUDINARY_API_SECRET).encode("utf-8")
+    ).hexdigest()
+
+
+# ── Cloudflare Turnstile verification dependency ──────────────────────────────
+async def verify_turnstile(request: Request) -> None:
+    """
+    Validate a Cloudflare Turnstile token from the `CF-Turnstile-Token` header.
+    No-op when TURNSTILE_SECRET is unset (local dev). Attach to write endpoints
+    we want to protect from bots (incident/note create, admin verify).
+    """
+    if not TURNSTILE_ENABLED:
+        return
+    token = (
+        request.headers.get("cf-turnstile-token")
+        or request.headers.get("cf-turnstile-response")
+    )
+    if not token:
+        raise HTTPException(status_code=400, detail="CAPTCHA required")
+    payload = {
+        "secret": TURNSTILE_SECRET,
+        "response": token,
+        "remoteip": _client_ip(request),
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                TURNSTILE_VERIFY_URL,
+                data=payload,
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                data = await resp.json()
+    except Exception as e:
+        logger.warning("Turnstile verification request failed: %s", e)
+        raise HTTPException(
+            status_code=503, detail="CAPTCHA verification unavailable"
+        )
+    if not data.get("success"):
+        logger.info("Turnstile rejected token: %s", data.get("error-codes"))
+        raise HTTPException(status_code=403, detail="CAPTCHA verification failed")
+
+
 # ── Security headers middleware ───────────────────────────────────────────────
+# Requests slower than this (ms) are logged at WARNING so slow endpoints surface
+# in production logs. Override via SLOW_REQUEST_MS in the environment.
+SLOW_REQUEST_MS = int(os.environ.get("SLOW_REQUEST_MS", "1500"))
+
+
+class RequestTimingMiddleware(BaseHTTPMiddleware):
+    """
+    Lightweight, dependency-free observability for Phase 2 "Add monitoring":
+    times every request and surfaces failures + slow endpoints in the logs.
+
+    - Adds an `X-Response-Time-ms` header to every response.
+    - Logs 5xx responses and slow requests at WARNING; client errors (4xx) at
+      INFO; healthy fast requests at DEBUG (so production INFO logs stay focused
+      on problems while uvicorn still emits its own access log).
+    - Logs unhandled exceptions with timing, then re-raises.
+
+    Pairs with an UptimeRobot ping on `GET /api/` and (optionally) Sentry.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        start = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.exception(
+                "request_error method=%s path=%s elapsed_ms=%.1f",
+                request.method, request.url.path, elapsed_ms,
+            )
+            raise
+
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        response.headers["X-Response-Time-ms"] = f"{elapsed_ms:.1f}"
+
+        is_slow = elapsed_ms >= SLOW_REQUEST_MS
+        if response.status_code >= 500 or is_slow:
+            level = logging.WARNING
+        elif response.status_code >= 400:
+            level = logging.INFO
+        else:
+            level = logging.DEBUG
+        logger.log(
+            level,
+            "request method=%s path=%s status=%s elapsed_ms=%.1f%s",
+            request.method, request.url.path, response.status_code, elapsed_ms,
+            " SLOW" if is_slow else "",
+        )
+        return response
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
@@ -279,6 +404,43 @@ def _validate_lng(v: float) -> float:
     if v is None or not (-180.0 <= float(v) <= 180.0):
         raise ValueError("longitude must be between -180 and 180")
     return float(v)
+
+
+def _bbox_filter(
+    min_lat: Optional[float],
+    min_lng: Optional[float],
+    max_lat: Optional[float],
+    max_lng: Optional[float],
+) -> Optional[Dict]:
+    """
+    Build a Mongo lat/lng range filter for a map viewport ("bounding box").
+    Returns None unless all four corners are supplied and valid, so callers can
+    transparently fall back to the existing "return everything" behaviour when
+    no bbox is requested (backward compatible). Coordinates out of range are
+    clamped rather than rejected, since they come from a map viewport.
+    """
+    if None in (min_lat, min_lng, max_lat, max_lng):
+        return None
+    lo_lat = max(-90.0, min(float(min_lat), float(max_lat)))
+    hi_lat = min(90.0, max(float(min_lat), float(max_lat)))
+    lo_lng = max(-180.0, min(float(min_lng), float(max_lng)))
+    hi_lng = min(180.0, max(float(min_lng), float(max_lng)))
+    return {
+        "latitude": {"$gte": lo_lat, "$lte": hi_lat},
+        "longitude": {"$gte": lo_lng, "$lte": hi_lng},
+    }
+
+
+# Default / max page sizes for list endpoints. Defaults preserve the historical
+# behaviour (up to 1000); the cap stops a client asking for an unbounded page.
+DEFAULT_LIST_LIMIT = 1000
+MAX_LIST_LIMIT = 2000
+
+
+def _clamp_limit(limit: Optional[int]) -> int:
+    if limit is None:
+        return DEFAULT_LIST_LIMIT
+    return max(1, min(int(limit), MAX_LIST_LIMIT))
 
 
 def _validate_image_url(v: Optional[str]) -> Optional[str]:
@@ -397,10 +559,37 @@ def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
 async def root():
     return {"message": "Community Map API"}
 
+
+@api_router.post(
+    "/uploads/sign",
+    dependencies=[Depends(rate_limit("upload_sign", max_requests=20, window_seconds=60))],
+)
+async def sign_upload():
+    """
+    Mint a short-lived signature for a direct browser→Cloudinary signed upload.
+    The client posts the file straight to Cloudinary with these fields, so the
+    image bytes never pass through this server. Returns 503 when Cloudinary is
+    not configured (the frontend then falls back to its previous behaviour).
+    """
+    if not CLOUDINARY_ENABLED:
+        raise HTTPException(status_code=503, detail="Image uploads are not configured")
+    timestamp = str(int(time.time()))
+    params_to_sign = {"timestamp": timestamp, "folder": CLOUDINARY_UPLOAD_FOLDER}
+    return {
+        "cloud_name": CLOUDINARY_CLOUD_NAME,
+        "api_key": CLOUDINARY_API_KEY,
+        "timestamp": timestamp,
+        "folder": CLOUDINARY_UPLOAD_FOLDER,
+        "signature": _cloudinary_sign(params_to_sign),
+    }
+
 @api_router.post(
     "/admin/verify",
     response_model=dict,
-    dependencies=[Depends(rate_limit("admin_verify", max_requests=5, window_seconds=60))],
+    dependencies=[
+        Depends(rate_limit("admin_verify", max_requests=5, window_seconds=60)),
+        Depends(verify_turnstile),
+    ],
 )
 async def verify_admin(auth: AdminAuth):
     """
@@ -465,7 +654,10 @@ async def geocode_address(address_search: AddressSearch):
 @api_router.post(
     "/incidents",
     response_model=Incident,
-    dependencies=[Depends(rate_limit("create_incident", max_requests=10, window_seconds=60))],
+    dependencies=[
+        Depends(rate_limit("create_incident", max_requests=10, window_seconds=60)),
+        Depends(verify_turnstile),
+    ],
 )
 async def create_incident(input: IncidentCreate):
     """
@@ -512,9 +704,22 @@ async def create_incident(input: IncidentCreate):
     return incident_obj
 
 @api_router.get("/incidents", response_model=List[Incident])
-async def get_incidents(hours: Optional[int] = None):
+async def get_incidents(
+    hours: Optional[int] = None,
+    min_lat: Optional[float] = None,
+    min_lng: Optional[float] = None,
+    max_lat: Optional[float] = None,
+    max_lng: Optional[float] = None,
+    limit: Optional[int] = None,
+):
     """
-    Get all incidents with optional time filter
+    Get incidents, optionally constrained to a map viewport (bbox) and/or a
+    time window, sorted most-recent-first and capped to `limit`.
+
+    All filters are optional and backward compatible: with no params this still
+    returns the most recent incidents (up to DEFAULT_LIST_LIMIT). Supplying all
+    four bbox corners limits results to the visible map area so the payload
+    scales with the viewport, not the whole city.
     """
     # Auto-cleanup fallback: remove incidents older than the TTL window. The TTL
     # index normally handles this in the background; this covers the gap between
@@ -523,15 +728,19 @@ async def get_incidents(hours: Optional[int] = None):
     await db.incidents.delete_many({
         "timestamp": {"$lt": cutoff_time}
     })
-    
-    # Exclude MongoDB's _id field and contact info from public results, and hide
-    # any content moderators have taken down.
-    incidents = await db.incidents.find({"hidden": {"$ne": True}}, {
+
+    # Hide moderated content; optionally restrict to the requested viewport.
+    query: Dict = {"hidden": {"$ne": True}}
+    bbox = _bbox_filter(min_lat, min_lng, max_lat, max_lng)
+    if bbox:
+        query.update(bbox)
+
+    incidents = await db.incidents.find(query, {
         "_id": 0,
         "contact_email": 0,
         "contact_phone": 0
-    }).to_list(1000)
-    
+    }).sort("timestamp", -1).to_list(_clamp_limit(limit))
+
     # Convert ISO string timestamps back to datetime objects and ensure like/dislike counts exist
     for incident in incidents:
         if isinstance(incident['timestamp'], str):
@@ -541,12 +750,12 @@ async def get_incidents(hours: Optional[int] = None):
             incident['like_count'] = 0
         if 'dislike_count' not in incident:
             incident['dislike_count'] = 0
-    
+
     # Filter by time if specified
     if hours:
         time_filter = datetime.now(timezone.utc) - timedelta(hours=hours)
         incidents = [i for i in incidents if i['timestamp'] >= time_filter]
-    
+
     return incidents
 
 @api_router.get("/admin/incidents", response_model=List[dict])
@@ -741,10 +950,19 @@ class ChatPinRequest(BaseModel):
     pinned: bool
 
 @api_router.get("/chat/messages")
-async def get_chat_messages():
+async def get_chat_messages(
+    before: Optional[str] = None,
+    limit: Optional[int] = None,
+):
     """
-    Get all chat messages (auto-cleanup messages older than 24 hours).
+    Get chat messages (auto-cleanup of messages older than 24 hours).
     Pinned messages are kept indefinitely so admins can keep them visible.
+
+    Pagination (both optional, backward compatible): pass `before` (an ISO
+    timestamp) to fetch the page of messages strictly older than it, and `limit`
+    to cap the page size. Results are always returned oldest-first for display.
+    With no params this returns the most recent page (up to DEFAULT_LIST_LIMIT),
+    matching the previous behaviour.
     """
     # Auto-cleanup fallback: remove non-pinned messages older than the TTL
     # window. The TTL index on expire_at handles this automatically; this covers
@@ -755,11 +973,23 @@ async def get_chat_messages():
         "pinned": {"$ne": True}
     })
     
-    # Get all messages (excluding any hidden by moderators)
+    # Build the query, excluding moderator-hidden messages. When `before` is
+    # supplied we page backwards through history (messages older than it).
+    query: Dict = {"hidden": {"$ne": True}}
+    if before:
+        try:
+            before_dt = datetime.fromisoformat(before)
+            query["timestamp"] = {"$lt": before_dt}
+        except ValueError:
+            pass
+
+    # Fetch the most recent `limit` matching messages (newest-first), then
+    # reverse to oldest-first so the chat renders in chronological order.
     messages = await db.chat_messages.find(
-        {"hidden": {"$ne": True}}, {"_id": 0, "expire_at": 0}
-    ).sort("timestamp", 1).to_list(1000)
-    
+        query, {"_id": 0, "expire_at": 0}
+    ).sort("timestamp", -1).to_list(_clamp_limit(limit))
+    messages.reverse()
+
     # Convert timestamps to ISO strings for JSON serialization
     result = []
     for message in messages:
@@ -1126,10 +1356,20 @@ class StreetNoteResolve(BaseModel):
     resolved: bool = True
 
 @api_router.get("/street-notes")
-async def get_street_notes():
+async def get_street_notes(
+    min_lat: Optional[float] = None,
+    min_lng: Optional[float] = None,
+    max_lat: Optional[float] = None,
+    max_lng: Optional[float] = None,
+    limit: Optional[int] = None,
+):
     """
     Get all non-expired street notes. Notes with expires_at == None are permanent
     and only deletable by admins. Auto-cleanup of expired (non-permanent) notes.
+
+    Optionally constrained to a map viewport (all four bbox corners) and capped
+    to `limit`. Both are optional and backward compatible: with no params this
+    returns the most recent notes (up to DEFAULT_LIST_LIMIT).
     """
     now = datetime.now(timezone.utc)
 
@@ -1140,9 +1380,14 @@ async def get_street_notes():
         "expires_at": {"$ne": None, "$lt": now}
     })
 
+    query: Dict = {"hidden": {"$ne": True}}
+    bbox = _bbox_filter(min_lat, min_lng, max_lat, max_lng)
+    if bbox:
+        query.update(bbox)
+
     notes = await db.street_notes.find(
-        {"hidden": {"$ne": True}}, {"_id": 0}
-    ).sort("created_at", -1).to_list(1000)
+        query, {"_id": 0}
+    ).sort("created_at", -1).to_list(_clamp_limit(limit))
 
     # Ensure timestamps are strings + backfill new fields for older docs
     for note in notes:
@@ -1162,7 +1407,10 @@ async def get_street_notes():
 
 @api_router.post(
     "/street-notes",
-    dependencies=[Depends(rate_limit("create_note", max_requests=10, window_seconds=60))],
+    dependencies=[
+        Depends(rate_limit("create_note", max_requests=10, window_seconds=60)),
+        Depends(verify_turnstile),
+    ],
 )
 async def create_street_note(note_data: StreetNoteCreate):
     """
@@ -1575,11 +1823,16 @@ app.add_middleware(
     allow_credentials=_allow_credentials,
     allow_origins=_cors_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "CF-Turnstile-Token"],
+    expose_headers=["X-Response-Time-ms", "Retry-After"],
 )
 
 # Security headers on every response.
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Request timing / error + slow-endpoint logging. Added last so it is the
+# outermost middleware and measures the full request lifecycle.
+app.add_middleware(RequestTimingMiddleware)
 
 # Configure logging
 logging.basicConfig(
@@ -1758,6 +2011,14 @@ async def ensure_indexes():
         await db.content_reports.create_index([("target_type", 1), ("target_id", 1)])
     except Exception as e:
         logger.warning("Could not create content_reports target index: %s", e)
+    # Compound lat/lng indexes back the map-viewport (bbox) range queries on the
+    # incident and street-note feeds. (A 2dsphere index for true nearest-neighbour
+    # search can be layered on later once docs carry a GeoJSON point.)
+    for coll_name in ("incidents", "street_notes"):
+        try:
+            await db[coll_name].create_index([("latitude", 1), ("longitude", 1)])
+        except Exception as e:
+            logger.warning("Could not create %s geo index: %s", coll_name, e)
     logger.info("Index/TTL setup complete")
 
 
