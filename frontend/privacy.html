@@ -20,71 +20,156 @@
           </div>
         </div>
         <div class="header-right">
-          <button class="legal-back-btn" onclick="history.length>1?history.back():location.href='/'" aria-label="Go back">
+          <button type="button" class="legal-back-btn" aria-label="Go back">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
           </button>
         </div>
       </section>
 
       <section class="panel-card">
-        <p><strong>Last updated:</strong> May 2026</p>
+        <p><strong>Last updated:</strong> June 2026</p>
         <p>
-          Melbourne Community Map helps people share short-lived community safety reports, street notes,
-          and chat messages. This policy explains the information the app uses so it can operate.
+          Melbourne Community Map ("the app", "we") helps people share short-lived community safety
+          reports, street notes, and chat messages around Melbourne. This policy explains what
+          information the app collects, how it is used and shared, how long it is kept, and the choices
+          you have. The app has <strong>no user accounts and no login</strong> for everyday use, and we
+          do <strong>not</strong> show ads, sell your data, or use third-party advertising or
+          cross-app tracking.
+
+        </p>
+        <p>
+          <strong>Most content you post is public.</strong> Incident reports, street notes,
+          helping-hand posts, chat messages, reactions, and the map location attached to a post are
+          visible to anyone using the app. Please do not post sensitive personal information, and do
+          not post other people's information or images without their permission.
         </p>
 
         <h2>Information We Collect</h2>
         <ul>
-          <li>Incident reports, street notes, chat messages, reactions, and admin-created street highlights.</li>
-          <li>Approximate location coordinates when you choose to use GPS, search for an address, or drop a pin.</li>
-          <li>Optional images attached to street notes or reports, if the feature is enabled in the app flow.</li>
-          <li>Anonymous session identifiers used for reactions, active-user counts, and short-lived app state.</li>
-          <li>Technical information sent by your browser or device when it contacts the website or API.</li>
+          <li><strong>Content you create</strong> — incident reports, street notes, helping-hand posts,
+            chat messages, reactions, and any text you type.</li>
+          <li><strong>Approximate location</strong> — the map coordinates attached to a post when you
+            use your device GPS, search for an address, or drop a pin. Location is used only when you
+            take one of these actions; the app does not track your location in the background.</li>
+          <li><strong>Optional photos</strong> — images you choose to attach to a report or note.
+            Images are uploaded to our image host (Cloudinary) and only the resulting image link is
+            stored in our database. Photos you post are public.</li>
+          <li><strong>Optional contact details</strong> — on a "Helping Hand" post you may add a name,
+            phone number, or email. These are shown publicly <strong>only if you opt in</strong> (see
+            below).</li>
+          <li><strong>An anonymous session identifier</strong> — a random ID generated in your browser
+            (not linked to your identity) used for active-user counts, reactions, and your optional
+            live avatar marker.</li>
+          <li><strong>Technical data for security</strong> — your IP address and basic request
+            information are processed temporarily to apply rate limits and bot/abuse protection
+            (CAPTCHA). Your IP address is not stored alongside your posts in our database.</li>
         </ul>
 
         <h2>How We Use Information</h2>
         <ul>
-          <li>To display community reports, notes, highlights, map pins, and live chat.</li>
-          <li>To keep the service safe by allowing administrators to review, edit, or remove content.</li>
-          <li>To expire short-lived reports, chat messages, and non-permanent street notes.</li>
-          <li>To diagnose technical issues and keep the app available.</li>
+          <li>To display community reports, notes, highlights, map pins, live presence, and chat.</li>
+          <li>To geocode an address you search for, so it can be shown on the map.</li>
+          <li>To keep the service safe — letting moderators review, hide, edit, or remove content, and
+            applying rate limits and CAPTCHA to prevent spam and abuse.</li>
+          <li>To automatically expire short-lived reports, chat messages, and temporary street notes.</li>
+          <li>To diagnose technical problems and keep the app available.</li>
+        </ul>
+        <p>
+          We do not use your information for advertising or profiling, and we do not sell or rent it.
+        </p>
+
+        <h2>Opt-In Contact Details In Posts</h2>
+        <p>
+          When you create a "Helping Hand" post you can optionally add a name, phone number, or email.
+          These details are <strong>only shown publicly if you explicitly opt in</strong> by enabling
+          "Let people reach me". If you leave that off, your contact details are never returned to
+          other users by the app. You can always be reached through anonymous community chat instead.
+        </p>
+
+        <h2>How Information Is Shared</h2>
+        <p>
+          We do not sell your personal information. Besides being shown publicly in the app as
+          described above, information is processed by the service providers we use to run the app:
+        </p>
+        <ul>
+          <li><strong>MongoDB Atlas</strong> — database hosting (stores posts, notes, chat, reports).</li>
+          <li><strong>Render</strong> — hosting for our backend API.</li>
+          <li><strong>Netlify</strong> — hosting/content delivery for the website and app.</li>
+          <li><strong>Cloudinary</strong> — storage and delivery of images you attach.</li>
+          <li><strong>Cloudflare Turnstile</strong> — bot/abuse protection (CAPTCHA); processes your IP
+            address and browser signals to confirm you are a human.</li>
+          <li><strong>OpenStreetMap (Nominatim)</strong> — when you search for an address, the text you
+            type is sent to OpenStreetMap's geocoding service to find coordinates.</li>
+          <li><strong>OpenStreetMap / CARTO</strong> — map background tiles.</li>
+        </ul>
+        <p>
+          These providers process data on our behalf to operate the app, and may store or process it on
+          servers outside Australia. We may also disclose information if required by law.
+        </p>
+
+        <h2>Data Retention</h2>
+        <ul>
+          <li>Incident reports are designed to expire about <strong>6 hours</strong> after posting.</li>
+          <li>Chat messages are designed to expire about <strong>24 hours</strong> after posting (unless
+            an administrator pins one).</li>
+          <li>Temporary street notes expire at the time chosen by their author (from 1 hour up to 3
+            days). "Keep forever" notes and admin-created content remain until removed by an
+            administrator.</li>
+          <li>Live avatar markers disappear within about a minute, and active-user presence within a
+            few minutes, of you leaving.</li>
+          <li>Content reports are kept while open and for a reasonable period after they are resolved so
+            moderators can act on repeat abuse.</li>
         </ul>
 
-        <h2>Retention</h2>
-        <p>
-          Incident reports are designed to expire after 6 hours. Chat messages are designed to expire after
-          24 hours. Non-permanent street notes expire at the time selected by the person who created them.
-          Admin-created content and permanent street notes remain until removed by an administrator.
-        </p>
-
-        <h2>Location And Images</h2>
-        <p>
-          Location access is optional. If you deny location permission, you can still browse the map and may
-          use manual search or pin placement where available. Images are optional and should not include
-          private, sensitive, or identifying information unless you have permission to share it.
-        </p>
-
-        <h2>Contact Details In Posts</h2>
-        <p>
-          When you create a "Helping Hand" post you can optionally add a name, phone number, or email. These
-          details are <strong>only shown publicly if you explicitly opt in</strong> by enabling "Let people
-          reach me". If you leave that off, your contact details are never returned to other users by the API.
-          You can always be reached through anonymous community chat instead.
-        </p>
+        <h2>Your Choices And Deleting Your Data</h2>
+        <ul>
+          <li><strong>Location</strong> is optional — if you decline the permission you can still browse
+            the map and place a pin or search manually.</li>
+          <li><strong>Photos and contact details</strong> are optional — leave them out if you prefer.</li>
+          <li>You can remove your live avatar marker by turning your avatar off (going anonymous).</li>
+          <li>Much of your content deletes itself automatically when it expires.</li>
+          <li><strong>To request deletion</strong> of something you posted, email
+            <a href="mailto:communitymap@outlook.com"><strong>communitymap@outlook.com</strong></a> with
+            enough detail to identify it (for example the approximate location, time, and text of the
+            post). Because there are no accounts, we rely on this information to locate your content.</li>
+        </ul>
 
         <h2>Reporting And Moderation</h2>
         <p>
-          If you flag content using the in-app report tool, we store the report (the reason, optional details,
-          and a reference to the content) so moderators can review it. Moderators may hide or delete content
-          that breaks our <a href="/terms.html">Community Rules</a>.
+          If you flag content using the in-app report tool, we store the report (the reason, optional
+          details, and a reference to the content) so moderators can review it. Moderators may hide or
+          delete content that breaks our <a href="/terms.html">Community Rules</a>.
+        </p>
+
+        <h2>Security</h2>
+        <p>
+          Traffic between the app and our servers is encrypted in transit (HTTPS). Administrative
+          actions require authentication, and we apply rate limiting and CAPTCHA to reduce abuse. No
+          online service can be guaranteed perfectly secure, so please avoid posting information you
+          would not want to be public.
+        </p>
+
+        <h2>Children's Privacy</h2>
+        <p>
+          The app is intended for a general audience and is not directed at children. We do not
+          knowingly collect personal information from children. If you believe a child has provided
+          personal information, contact us and we will remove it.
+        </p>
+
+        <h2>Changes To This Policy</h2>
+        <p>
+          We may update this policy from time to time. Material changes will be reflected by updating
+          the "Last updated" date above.
         </p>
 
         <h2>Contact</h2>
         <p>
-          For privacy requests, support, or moderation concerns, use the contact details listed on the
-          <a href="/support.html">Support page</a>.
+          For privacy requests, data deletion, support, or moderation concerns, email us at
+          <a href="mailto:communitymap@outlook.com"><strong>communitymap@outlook.com</strong></a>.
+          You can also see the <a href="/support.html">Support page</a>.
         </p>
       </section>
     </main>
+    <script src="./legal.js"></script>
   </body>
 </html>

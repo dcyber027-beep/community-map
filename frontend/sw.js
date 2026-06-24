@@ -1,4 +1,4 @@
-const CACHE_NAME = 'community-map-v35';
+const CACHE_NAME = 'community-map-v36';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -7,6 +7,7 @@ const PRECACHE_URLS = [
   '/terms.html',
   '/styles.css',
   '/app.js',
+  '/legal.js',
   '/sw-register.js',
   '/vendor/purify.min.js',
   '/manifest.json',
