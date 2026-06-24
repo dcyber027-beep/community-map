@@ -45,6 +45,14 @@ build/
 *.db
 *.sqlite
 
+# Android / TWA signing keys & secrets — NEVER commit these.
+# Losing the keystore (without Play App Signing) means you can never update the
+# published app, and committing it would let anyone impersonate your app.
+*.jks
+*.keystore
+android.keystore
+keystore.properties
+
 # Testing
 .pytest_cache/
 .coverage

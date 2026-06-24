@@ -8,6 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import aiohttp
 import os
 import hashlib
+import hmac
 import logging
 import secrets
 import time
@@ -87,6 +88,30 @@ CLOUDINARY_ENABLED = bool(
 TURNSTILE_SECRET = os.environ.get("TURNSTILE_SECRET", "").strip()
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 TURNSTILE_ENABLED = bool(TURNSTILE_SECRET)
+
+# ── Public identity tokens (privacy) ──────────────────────────────────────────
+# Raw client user ids (chat author, note owner, peer marker) must NEVER be
+# returned to the public, because the same id is reused across chat, notes and
+# live location — exposing it would let anyone correlate a person's activity and
+# track their position. Instead we return a stable, one-way HMAC "token": it's
+# still consistent per user (so client-side block/mute and owner checks work)
+# but is non-reversible and reveals nothing about the raw id. The salt is stable
+# across restarts (derived from MONGO_URL) unless an explicit IDENTITY_SALT is
+# set, so tokens stay consistent over time.
+IDENTITY_SALT = os.environ.get("IDENTITY_SALT", "").strip() or hashlib.sha256(
+    ("identity-token-v1:" + mongo_url).encode("utf-8")
+).hexdigest()
+
+
+def _public_token(raw_id: Optional[str]) -> Optional[str]:
+    """One-way, stable token for a raw user id. None/empty in → None out."""
+    if not raw_id:
+        return None
+    return hmac.new(
+        IDENTITY_SALT.encode("utf-8"),
+        str(raw_id).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()[:20]
 
 
 def _validate_admin_config() -> None:
@@ -844,15 +869,38 @@ async def update_incident(incident_id: str, update_data: dict, _admin: str = Dep
     
     return {"success": True, "message": "Incident updated"}
 
+def _norm_reaction(v: Optional[str]) -> Optional[str]:
+    """Normalise a reaction value; '', None or 'none' all mean 'no reaction'."""
+    v = (v or "").strip().lower()
+    if v in {"", "none"}:
+        return None
+    if v not in {"like", "dislike"}:
+        raise ValueError("reaction must be 'like', 'dislike' or 'none'")
+    return v
+
+
 class ReactionRequest(BaseModel):
-    reaction: str  # "like" or "dislike"
+    # The reaction the caller now wants ("like" | "dislike" | "none" to clear).
+    reaction: str
+    # The caller's PREVIOUS reaction on this device, so the server can apply a
+    # net change (decrement the old, increment the new) and keep one-vote-per
+    # -device toggling honest without inflating counts.
+    previous: Optional[str] = None
 
     @field_validator("reaction")
     @classmethod
     def _check_reaction(cls, v: str) -> str:
         v = (v or "").strip().lower()
-        if v not in {"like", "dislike"}:
-            raise ValueError("reaction must be 'like' or 'dislike'")
+        if v not in {"like", "dislike", "none", ""}:
+            raise ValueError("reaction must be 'like', 'dislike' or 'none'")
+        return v
+
+    @field_validator("previous")
+    @classmethod
+    def _check_previous(cls, v: Optional[str]) -> Optional[str]:
+        v = (v or "").strip().lower()
+        if v not in {"like", "dislike", "none", ""}:
+            raise ValueError("previous must be 'like', 'dislike' or 'none'")
         return v
 
 @api_router.post(
@@ -861,31 +909,41 @@ class ReactionRequest(BaseModel):
 )
 async def react_to_incident(incident_id: str, reaction: ReactionRequest):
     """
-    Add a like or dislike to an incident
+    Toggle a like/dislike on an incident.
+
+    The client sends its desired `reaction` and its `previous` reaction so we can
+    apply the net delta: remove the prior vote (if any) and add the new one (if
+    any). This lets users change or undo their vote without inflating totals.
     """
-    if reaction.reaction not in ["like", "dislike"]:
-        raise HTTPException(status_code=400, detail="Reaction must be 'like' or 'dislike'")
-    
-    # Increment the appropriate count
-    field = "like_count" if reaction.reaction == "like" else "dislike_count"
-    
-    result = await db.incidents.update_one(
-        {"id": incident_id},
-        {"$inc": {field: 1}}
-    )
-    
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Incident not found")
-    
-    # Get updated incident to return counts
+    new = _norm_reaction(reaction.reaction)
+    prev = _norm_reaction(reaction.previous)
+
+    field_of = {"like": "like_count", "dislike": "dislike_count"}
+    inc: dict = {}
+    if prev and prev != new:
+        inc[field_of[prev]] = inc.get(field_of[prev], 0) - 1
+    if new and new != prev:
+        inc[field_of[new]] = inc.get(field_of[new], 0) + 1
+
+    if inc:
+        result = await db.incidents.update_one({"id": incident_id}, {"$inc": inc})
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Incident not found")
+
     updated = await db.incidents.find_one({"id": incident_id}, {"_id": 0})
     if not updated:
         raise HTTPException(status_code=404, detail="Incident not found")
-    
+
+    # Clamp any count that drifted below zero (e.g. legacy/desynced data).
+    fixups = {f: 0 for f in ("like_count", "dislike_count") if updated.get(f, 0) < 0}
+    if fixups:
+        await db.incidents.update_one({"id": incident_id}, {"$set": fixups})
+        updated.update(fixups)
+
     return {
         "success": True,
         "like_count": updated.get("like_count", 0),
-        "dislike_count": updated.get("dislike_count", 0)
+        "dislike_count": updated.get("dislike_count", 0),
     }
 
 # Active Users Tracking
@@ -920,6 +978,9 @@ async def user_heartbeat(session_id: str):
 class ChatMessageCreate(BaseModel):
     message: str = Field(min_length=1, max_length=MAX_CHAT_LEN)
     author: Optional[str] = "Anonymous"
+    # Stable, client-generated id of the sender (re-uses the chat user id). Lets
+    # other users block this sender locally. Anonymous and not tied to identity.
+    author_id: Optional[str] = Field(default=None, max_length=100)
 
     @field_validator("message")
     @classmethod
@@ -1001,6 +1062,9 @@ async def get_chat_messages(
             msg_dict['timestamp'] = msg_dict['timestamp']
         # Backward compatibility for messages stored before pinning existed
         msg_dict.setdefault('pinned', False)
+        # Privacy: never expose the raw author id — only a one-way token that
+        # still lets clients block this sender across the app.
+        msg_dict['author_token'] = _public_token(msg_dict.pop('author_id', None))
         result.append(msg_dict)
     
     return result
@@ -1022,6 +1086,7 @@ async def create_chat_message(message_data: ChatMessageCreate):
         "id": message_id,
         "message": message_data.message,
         "author": message_data.author or "Anonymous",
+        "author_id": message_data.author_id or None,
         "timestamp": now,
         "expire_at": now + timedelta(hours=CHAT_TTL_HOURS),
         "pinned": False
@@ -1398,6 +1463,10 @@ async def get_street_notes(
         note.setdefault('kind', 'discovery')
         note.setdefault('resolved', False)
         note.setdefault('contact_public', False)
+        # Privacy: never expose the raw owner id — return a one-way token only,
+        # so the author can still resolve their own post (matched client-side)
+        # and others can block them, without leaking a trackable identifier.
+        note['owner_token'] = _public_token(note.pop('owner_id', None))
         # Privacy: only expose personal contact details when the author opted in
         if not note.get('contact_public'):
             note['contact_phone'] = None
@@ -1460,6 +1529,8 @@ async def create_street_note(note_data: StreetNoteCreate):
     response_note = dict(note_doc)
     response_note["created_at"] = now.isoformat()
     response_note["expires_at"] = expires_at.isoformat() if expires_at else None
+    # Privacy: return the one-way token, never the raw owner id (matches GET).
+    response_note["owner_token"] = _public_token(response_note.pop("owner_id", None))
     return {"success": True, "note": response_note}
 
 @api_router.post("/street-notes/{note_id}/resolve")
@@ -1618,13 +1689,44 @@ async def list_peers():
         {"ts": {"$gte": cutoff_ms}},
         {"_id": 0}
     ).to_list(500)
-    return peers
+    # Privacy: expose a one-way token instead of the raw id, so live locations
+    # can't be tied back to a trackable identity (or to chat/notes by the same id).
+    return [
+        {
+            "token": _public_token(p.get("id")),
+            "emoji": p.get("emoji"),
+            "title": p.get("title"),
+            "lat": p.get("lat"),
+            "lng": p.get("lng"),
+            "ts": p.get("ts"),
+        }
+        for p in peers
+    ]
 
 @api_router.delete("/peers/{peer_id}")
 async def remove_peer(peer_id: str):
     """Remove a peer's marker when they switch back to anonymous."""
     await db.peers.delete_one({"id": peer_id})
     return {"ok": True}
+
+
+class IdentityRequest(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+
+
+@api_router.post(
+    "/identity/token",
+    dependencies=[Depends(rate_limit("identity", max_requests=30, window_seconds=60))],
+)
+async def identity_token(req: IdentityRequest):
+    """Return the caller's own public token.
+
+    The token is a one-way hash of the caller's raw id, computed with a server
+    secret. Clients can't derive it themselves, so this lets a client learn its
+    own token in order to recognise its own content/marker and hide block
+    buttons on its own posts — without the raw id ever being public.
+    """
+    return {"token": _public_token(req.id)}
 
 # ── Moderation: user reports + admin review queue ─────────────────────────────
 # Maps a report target type to the collection it lives in. Used to verify the

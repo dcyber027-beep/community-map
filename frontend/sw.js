@@ -1,4 +1,4 @@
-const CACHE_NAME = 'community-map-v36';
+const CACHE_NAME = 'community-map-v41';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -12,7 +12,8 @@ const PRECACHE_URLS = [
   '/vendor/purify.min.js',
   '/manifest.json',
   '/icons/icon-192x192.png',
-  '/icons/icon-512x512.png'
+  '/icons/icon-512x512.png',
+  '/icons/icon-maskable-512x512.png'
 ];
 
 self.addEventListener('install', (event) => {

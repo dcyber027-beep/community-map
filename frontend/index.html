@@ -878,6 +878,7 @@
       <div class="chat-modal-content">
         <div class="chat-header">
           <h2>Group Chat</h2>
+          <button class="chat-blocked-link" id="chat-blocked-link" type="button" title="Manage blocked users" style="margin-left:auto;margin-right:0.5rem;background:none;border:none;color:var(--ui-muted,#999);font-size:0.78rem;cursor:pointer;">🚫 Blocked</button>
           <button class="chat-close" id="chat-close" type="button" aria-label="Back to map" title="Back to map">&times;</button>
         </div>
         <div class="chat-messages-container" id="chat-messages-container">
@@ -888,11 +889,11 @@
             type="text"
             id="chat-message-input"
             class="chat-input"
-            placeholder="Type your message..."
+            placeholder="Message the community…"
             maxlength="500"
           />
-          <button id="chat-send-button" class="chat-send-button" type="button">
-            Send
+          <button id="chat-send-button" class="chat-send-button" type="button" aria-label="Send">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="6"/><polyline points="6 11 12 5 18 11"/></svg>
           </button>
         </div>
       </div>

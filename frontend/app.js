@@ -618,6 +618,8 @@ function getFilteredIncidentsForMap() {
   // Reports layer off → no incident markers
   if (!showIncidents) return [];
   return incidents.filter((inc) => {
+    // Incidents are anonymous (no author) — allow hiding a specific report.
+    if (isContentHidden("incident", inc.id)) return false;
     const now = new Date();
     const ts = new Date(inc.timestamp);
 
@@ -671,6 +673,7 @@ function filteredIncidentsForList() {
   const { hours, incidentCat, urgencyMode } = getListFilterState();
   if (!showIncidents) return [];
   return incidents.filter((inc) => {
+    if (isContentHidden("incident", inc.id)) return false;
     if (hours != null) {
       if (new Date(inc.timestamp) < new Date(Date.now() - hours * 3600000)) return false;
     }
@@ -687,6 +690,8 @@ function filteredNotesForList() {
   return streetNotes.filter((note) => {
     // Expired notes are deleted for good — keep them out of the list view too.
     if (isNoteExpired(note)) return false;
+    // Respect user-level block/hide.
+    if (isAuthorBlocked(note.owner_token) || isContentHidden("street_note", note.id)) return false;
     // Facility notes follow the Public Facilities toggle; others the Discoveries toggle
     const visible = isFacilityNote(note) ? showFacilities : showNotes;
     if (!visible) return false;
@@ -944,12 +949,12 @@ function renderList() {
   container.appendChild(sheet);
 }
 
-async function reactToIncident(incidentId, reaction) {
+async function reactToIncident(incidentId, reaction, previous) {
   try {
     const res = await fetch(`${API_BASE}/incidents/${incidentId}/react`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reaction }),
+      body: JSON.stringify({ reaction, previous: previous || "none" }),
     });
     
     if (res.status === 429) {
@@ -962,15 +967,19 @@ async function reactToIncident(incidentId, reaction) {
     
     const data = await res.json();
     
-    // Store user reaction
-    userReactions.set(incidentId, reaction);
+    // Remember (or clear) this device's reaction so future toggles net out.
+    if (reaction === "like" || reaction === "dislike") {
+      userReactions.set(incidentId, reaction);
+    } else {
+      userReactions.delete(incidentId);
+    }
     saveUserReactions();
     
     // Update the incident in the local array
     const incident = incidents.find(inc => inc.id === incidentId);
     if (incident) {
-      incident.like_count = data.like_count || incident.like_count || 0;
-      incident.dislike_count = data.dislike_count || incident.dislike_count || 0;
+      incident.like_count = data.like_count || 0;
+      incident.dislike_count = data.dislike_count || 0;
     }
     
     // Update the UI
@@ -987,31 +996,13 @@ function updateReactionButtons(incidentId, likeCount, dislikeCount) {
   const likeBtn = document.getElementById("detail-like-btn");
   const dislikeBtn = document.getElementById("detail-dislike-btn");
   const likeCountEl = document.getElementById("detail-like-count");
-  const dislikeCountEl = document.getElementById("detail-dislike-count");
-  
-  if (likeCountEl) likeCountEl.textContent = likeCount || 0;
-  if (dislikeCountEl) dislikeCountEl.textContent = dislikeCount || 0;
-  
+
+  // The pills stay interactive; we only reflect the current selection + count.
+  if (likeCountEl) likeCountEl.textContent = likeCount > 0 ? `(${likeCount})` : "";
+
   const userReaction = userReactions.get(incidentId);
-  if (likeBtn) {
-    if (userReaction === "like") {
-      likeBtn.classList.add("active");
-      likeBtn.disabled = true;
-    } else {
-      likeBtn.classList.remove("active");
-      likeBtn.disabled = false;
-    }
-  }
-  
-  if (dislikeBtn) {
-    if (userReaction === "dislike") {
-      dislikeBtn.classList.add("active");
-      dislikeBtn.disabled = true;
-    } else {
-      dislikeBtn.classList.remove("active");
-      dislikeBtn.disabled = false;
-    }
-  }
+  if (likeBtn) likeBtn.classList.toggle("active-reaction", userReaction === "like");
+  if (dislikeBtn) dislikeBtn.classList.toggle("active-reaction", userReaction === "dislike");
 }
 
 async function openDetailModal(incident) {
@@ -1023,6 +1014,7 @@ async function openDetailModal(incident) {
   const likeCount = incident.like_count || 0;
   const userReaction = userReactions.get(incident.id);
   const sawItActive = userReaction === "like" ? "active-reaction" : "";
+  const notHelpfulActive = userReaction === "dislike" ? "active-reaction" : "";
 
   const urgencyStatusClass = {
     high: 'detail-status-high', medium: 'detail-status-medium', low: 'detail-status-low'
@@ -1065,15 +1057,17 @@ async function openDetailModal(incident) {
       ${descHtml}
       ${credHtml}
       ${clusterHtml}
-      <div class="detail-card-actions">
-        <button id="detail-like-btn" class="detail-action-btn primary ${sawItActive}" type="button">
-          👥 I Saw This Too <span id="detail-like-count">${likeCount > 0 ? `(${likeCount})` : ''}</span>
+      <div class="detail-vote-segment">
+        <button id="detail-like-btn" class="vote-pill confirm ${sawItActive}" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12.5 10 17.5 19 7"/></svg>
+          Confirmed <span id="detail-like-count">${likeCount > 0 ? `(${likeCount})` : ''}</span>
         </button>
-        <button id="detail-dislike-btn" class="detail-action-btn" type="button">
-          👎 Dislike
+        <button id="detail-dislike-btn" class="vote-pill decline ${notHelpfulActive}" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+          Not Helpful
         </button>
       </div>
-      <button id="detail-report-btn" type="button" style="margin-top:0.6rem;background:none;border:none;color:var(--ui-muted,#888);font-size:0.78rem;cursor:pointer;text-decoration:underline;padding:0;">🚩 Flag as misleading or wrong</button>
+      <button id="detail-more-btn" class="card-more-btn" type="button" aria-label="More options">${MORE_DOTS_SVG}<span>More</span></button>
       ${isAdminLoggedIn ? `<button id="detail-admin-delete-btn" type="button" style="margin-top:0.6rem;width:100%;background:#dc2626;border:none;color:#fff;font-size:0.85rem;font-weight:600;cursor:pointer;padding:0.6rem;border-radius:8px;">🗑 Delete this report (admin)</button>` : ''}
     </div>
   `;
@@ -1088,36 +1082,47 @@ async function openDetailModal(incident) {
   const likeBtn = document.getElementById("detail-like-btn");
   const dislikeBtn = document.getElementById("detail-dislike-btn");
 
-  if (userReaction) {
-    if (likeBtn) likeBtn.disabled = true;
-    if (dislikeBtn) dislikeBtn.disabled = true;
-  }
+  // Reactions are a toggle (one vote per device): tapping your current choice
+  // clears it, tapping the other switches. Buttons stay live so it never feels
+  // frozen; the server applies the net change so counts stay correct.
+  let reactBusy = false;
+  const toggleReaction = async (choice) => {
+    if (reactBusy) return;
+    reactBusy = true;
+    const prev = userReactions.get(incident.id) || null;
+    const next = prev === choice ? "none" : choice;
+    try {
+      await reactToIncident(incident.id, next, prev);
+    } finally {
+      reactBusy = false;
+    }
+  };
+  if (likeBtn) likeBtn.addEventListener("click", () => toggleReaction("like"));
+  if (dislikeBtn) dislikeBtn.addEventListener("click", () => toggleReaction("dislike"));
 
-  if (likeBtn) {
-    likeBtn.addEventListener("click", async () => {
-      if (likeBtn.disabled) return;
-      likeBtn.disabled = true;
-      if (dislikeBtn) dislikeBtn.disabled = true;
-      await reactToIncident(incident.id, "like");
-      likeBtn.classList.add("active-reaction");
-      const countEl = document.getElementById("detail-like-count");
-      if (countEl) countEl.textContent = `(${(incident.like_count || 0) + 1})`;
+  const moreBtn = document.getElementById("detail-more-btn");
+  if (moreBtn) {
+    moreBtn.addEventListener("click", () => {
+      openActionMenu({
+        actions: [
+          {
+            label: "Report content",
+            icon: SHEET_ICONS.report,
+            handler: () => openFlagModal("incident", incident.id),
+          },
+          {
+            label: "Hide post",
+            icon: SHEET_ICONS.hide,
+            handler: () => {
+              hideContent("incident", incident.id);
+              closeDetailModal();
+              refreshAfterModeration();
+              showToast("Post hidden");
+            },
+          },
+        ],
+      });
     });
-  }
-
-  if (dislikeBtn) {
-    dislikeBtn.addEventListener("click", async () => {
-      if (dislikeBtn.disabled) return;
-      dislikeBtn.disabled = true;
-      if (likeBtn) likeBtn.disabled = true;
-      await reactToIncident(incident.id, "dislike");
-      dislikeBtn.classList.add("active-reaction");
-    });
-  }
-
-  const reportBtn = document.getElementById("detail-report-btn");
-  if (reportBtn) {
-    reportBtn.addEventListener("click", () => openFlagModal("incident", incident.id));
   }
 
   // Admin moderation: delete this report straight from the pin's detail card.
@@ -1361,6 +1366,69 @@ function openFlagModal(targetType, targetId) {
   });
 
   document.body.appendChild(overlay);
+}
+
+// ── Generic iOS-style action sheet (progressive disclosure) ──────────────────
+// Used to tuck secondary/moderation actions behind a single "⋯ More" control
+// instead of showing Report / Hide / Block all at once. Matches the report
+// sheet's visual language (layered surface, no borders, soft elevation).
+const SHEET_ICONS = {
+  report: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="3.2" x2="5" y2="20.8"/><path d="M5 4.4h11.2l-2.4 3.4 2.4 3.4H5z"/></svg>',
+  hide: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12s3.4-6 9-6c1.5 0 2.8.37 4 .98M21 12s-1 1.8-2.9 3.4M14.1 14.1A3 3 0 0 1 9.9 9.9"/><line x1="3.6" y1="3.6" x2="20.4" y2="20.4"/></svg>',
+  unhide: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12s3.4-6 9-6 9 6 9 6-3.4 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.6"/></svg>',
+  block: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="3.2"/><path d="M4.3 18.6a6 6 0 0 1 10-4.2"/><circle cx="17.5" cy="17.5" r="4"/><line x1="14.9" y1="14.9" x2="20.1" y2="20.1"/></svg>',
+  message: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-12.1 7.5L3 20.5l1.5-5.9A8.4 8.4 0 1 1 21 11.5z"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V5.2A1.2 1.2 0 0 1 10.7 4h2.6a1.2 1.2 0 0 1 1.2 1.2V7M6.5 7l.8 12.1A1.6 1.6 0 0 0 8.9 20.6h6.2a1.6 1.6 0 0 0 1.6-1.5L17.5 7"/></svg>',
+  pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="14.5" x2="12" y2="21"/><path d="M8 3.5h8l-1 5 2.5 2.5v1.5H6.5V11L9 8.5z"/></svg>',
+};
+
+// Horizontal three-dot "more" glyph used for the overflow trigger.
+const MORE_DOTS_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>';
+
+function openActionMenu({ title = "", message = "", actions = [] } = {}) {
+  const existing = document.getElementById("app-action-menu-overlay");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "app-action-menu-overlay";
+  overlay.className = "report-sheet-overlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  if (title) overlay.setAttribute("aria-label", title);
+
+  const headHtml = (title || message)
+    ? `<div class="report-sheet-head">${title ? `<h3>${escapeHtml(title)}</h3>` : ""}${message ? `<p>${escapeHtml(message)}</p>` : ""}</div>`
+    : "";
+  const rowsHtml = actions.map((a, i) => `
+    <button type="button" class="sheet-action-row${a.destructive ? " destructive" : ""}" data-i="${i}">
+      <span class="sheet-action-icon">${a.icon || ""}</span>
+      <span class="sheet-action-label">${escapeHtml(a.label)}</span>
+    </button>`).join("");
+
+  overlay.innerHTML = `
+    <div class="report-sheet" role="document">
+      <div class="report-sheet-group">
+        ${headHtml}
+        ${rowsHtml}
+      </div>
+      <button type="button" class="report-sheet-cancel">Cancel</button>
+    </div>`;
+
+  const close = () => { document.removeEventListener("keydown", onKey); overlay.remove(); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector(".report-sheet-cancel").addEventListener("click", close);
+  overlay.querySelectorAll(".sheet-action-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      const a = actions[Number(row.dataset.i)];
+      close();
+      if (a && typeof a.handler === "function") a.handler();
+    });
+  });
+
+  document.body.appendChild(overlay);
+  return close;
 }
 
 function getActiveChipValue(containerId) {
@@ -2867,9 +2935,18 @@ async function broadcastOwnLocation() {
       body: JSON.stringify(payload),
     });
   } catch (_) {}
-  // Also update local cache so own marker is instant
+  // Also update local cache so own marker is instant. Key/identify by our own
+  // token so it matches the server's echo (which carries tokens, not raw ids).
   const store = getPeerStore();
-  store[payload.id] = payload;
+  const selfKey = myToken || payload.id;
+  store[selfKey] = {
+    emoji: payload.emoji,
+    title: payload.title,
+    lat: payload.lat,
+    lng: payload.lng,
+    ts: payload.ts,
+    token: myToken || null,
+  };
   savePeerStore(store);
   renderPeerMarkers();
 }
@@ -2895,10 +2972,10 @@ function renderPeerMarkers() {
   peerLayer.clearLayers();
   const now = Date.now();
   const store = getPeerStore();
-  const myId = getChatUserId();
   Object.values(store).forEach(peer => {
     if (now - peer.ts > PEER_TTL_MS) return; // stale fallback guard
-    const isMe = peer.id === myId;
+    if (isAuthorBlocked(peer.token)) return; // don't show blocked users' avatars
+    const isMe = !!myToken && peer.token === myToken;
     const safeTitle = escapeHtml(peer.title);
     const safeEmoji = escapeHtml(peer.emoji);
     const icon = L.divIcon({
@@ -2920,7 +2997,7 @@ async function removeSelfFromPeers() {
     await fetch(`${API_BASE}/peers/${getChatUserId()}`, { method: "DELETE" });
   } catch (_) {}
   const store = getPeerStore();
-  delete store[getChatUserId()];
+  delete store[myToken || getChatUserId()];
   savePeerStore(store);
   renderPeerMarkers();
 }
@@ -3549,11 +3626,10 @@ function buildStreetNotePopupHtml(note) {
   const locationHtml = note.location_text
     ? `<div style="font-size: 0.75rem; color: var(--ui-muted); margin-bottom: 0.5rem;">📍 ${escapeHtml(note.location_text)}</div>`
     : "";
-  const adminDeleteHtml = (isAdminLoggedIn && !note.isCityReference)
-    ? `<div style="margin-top: 0.5rem;"><button type="button" class="note-admin-delete" data-note-id="${note.id}">🗑️ Delete note</button></div>`
-    : "";
-  const reportHtml = !note.isCityReference
-    ? `<div style="margin-top:0.4rem;"><button type="button" class="note-report-btn" data-note-id="${note.id}" style="background:transparent;border:none;color:var(--ui-muted,#888);font-size:0.72rem;cursor:pointer;padding:0;text-decoration:underline;">⚑ Report this note</button></div>`
+  // Progressive disclosure: report / hide / block / admin-delete all live behind
+  // a single ⋯ overflow so the popup leads with content, not moderation chrome.
+  const moreBtnHtml = !note.isCityReference
+    ? `<button type="button" class="popup-more-btn note-more-btn" aria-label="More options">${MORE_DOTS_SVG}</button>`
     : "";
 
   let helpingHeaderHtml = "";
@@ -3573,7 +3649,7 @@ function buildStreetNotePopupHtml(note) {
       contactHtml = `<div style="font-size:0.8rem; color:var(--ui-text); margin:0.4rem 0; line-height:1.6;">${lines.join("")}</div>`;
     }
 
-    const isOwner = note.owner_id && note.owner_id === getChatUserId();
+    const isOwner = note.owner_token && note.owner_token === myToken;
     const labels = helpingResolveLabels(note.emoji);
     if (isResolved) {
       foundBadgeHtml = `<span class="note-found-badge">${labels.badge}</span>`;
@@ -3594,9 +3670,10 @@ function buildStreetNotePopupHtml(note) {
       <div style="font-size: 0.9375rem; color: var(--ui-text); line-height: 1.5; margin-bottom: 0.5rem;">${escapeHtml(note.text)}${permBadge}${foundBadgeHtml}</div>
       ${contactHtml}
       <div style="font-size: 0.75rem; color: var(--ui-muted);">${escapeHtml(timeAgo)} &middot; ${escapeHtml(expiryText)}</div>
-      ${resolveBtnHtml}
-      ${reportHtml}
-      ${adminDeleteHtml}
+      <div class="popup-actions-row">
+        <div class="popup-actions-primary">${resolveBtnHtml}</div>
+        ${moreBtnHtml}
+      </div>
     </div>
   `;
 }
@@ -3604,19 +3681,6 @@ function buildStreetNotePopupHtml(note) {
 // Wire up the interactive buttons inside an opened street-note popup.
 function attachStreetNotePopupHandlers(root, note) {
   if (!root) return;
-  const delBtn = root.querySelector(".note-admin-delete");
-  if (delBtn) {
-    delBtn.addEventListener("click", async () => {
-      if (!confirm("Delete this street note?")) return;
-      try {
-        await deleteStreetNoteById(note.id);
-        map.closePopup();
-        await fetchStreetNotes();
-      } catch (err) {
-        alert("Failed to delete note.");
-      }
-    });
-  }
   const chatBtn = root.querySelector(".note-chat-btn");
   if (chatBtn) {
     chatBtn.addEventListener("click", () => {
@@ -3624,11 +3688,57 @@ function attachStreetNotePopupHandlers(root, note) {
       if (typeof openChatModal === "function") openChatModal();
     });
   }
-  const reportBtn = root.querySelector(".note-report-btn");
-  if (reportBtn) {
-    reportBtn.addEventListener("click", () => {
-      map.closePopup();
-      openFlagModal("street_note", note.id);
+  const moreBtn = root.querySelector(".note-more-btn");
+  if (moreBtn) {
+    moreBtn.addEventListener("click", () => {
+      const actions = [
+        {
+          label: "Report content",
+          icon: SHEET_ICONS.report,
+          handler: () => { map.closePopup(); openFlagModal("street_note", note.id); },
+        },
+        {
+          label: "Hide this note",
+          icon: SHEET_ICONS.hide,
+          handler: () => {
+            hideContent("street_note", note.id);
+            map.closePopup();
+            refreshAfterModeration();
+            showToast("Note hidden");
+          },
+        },
+      ];
+      if (note.owner_token && note.owner_token !== myToken) {
+        actions.push({
+          label: "Block author",
+          icon: SHEET_ICONS.block,
+          handler: () => {
+            blockAuthor(note.owner_token, note.contact_name || "Community member");
+            map.closePopup();
+            refreshAfterModeration();
+            showToast("User blocked");
+          },
+        });
+      }
+      if (isAdminLoggedIn) {
+        actions.push({
+          label: "Delete note (admin)",
+          icon: SHEET_ICONS.trash,
+          destructive: true,
+          handler: async () => {
+            if (!confirm("Permanently delete this street note?")) return;
+            try {
+              await deleteStreetNoteById(note.id);
+              map.closePopup();
+              await fetchStreetNotes();
+              showToast("Note deleted");
+            } catch (err) {
+              alert("Failed to delete note.");
+            }
+          },
+        });
+      }
+      openActionMenu({ title: "Note options", actions });
     });
   }
   const resolveBtn = root.querySelector(".note-resolve-btn");
@@ -3661,6 +3771,8 @@ function renderStreetNotes() {
     // Expired notes are gone for good — never draw them, even if one expired
     // since the last refetch.
     if (isNoteExpired(note)) return;
+    // Hide notes from blocked authors or notes the viewer chose to hide.
+    if (isAuthorBlocked(note.owner_token) || isContentHidden("street_note", note.id)) return;
     // Facility notes follow the Public Facilities toggle; everything else
     // follows the Discoveries toggle.
     if (isFacilityNote(note) ? !showPublicFacilities : !showStreetNotes) return;
@@ -4601,6 +4713,181 @@ function getChatUserId() {
   return currentUserId;
 }
 
+// Public identity token for THIS device. The backend never exposes raw user ids
+// any more (privacy): chat authors, note owners and map peers are identified by
+// a one-way token instead. We can't compute our own token (it needs a server
+// secret), so we ask the server for it once and cache it. It's used to detect
+// our own content/marker and to hide the "block" button on our own posts.
+let myToken = null;
+const MY_TOKEN_KEY = "myAuthorToken";
+
+async function ensureMyToken() {
+  if (myToken) return myToken;
+  const cached = localStorage.getItem(MY_TOKEN_KEY);
+  if (cached) { myToken = cached; return myToken; }
+  try {
+    const res = await fetch(`${API_BASE}/identity/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: getChatUserId() }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.token) {
+        myToken = data.token;
+        try { localStorage.setItem(MY_TOKEN_KEY, myToken); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+  return myToken;
+}
+
+// ── User-level block / mute (client-side moderation) ────────────────────────
+// Google Play's UGC policy expects users to be able to block other users and
+// hide objectionable content, not just rely on admin removal. Because the app
+// is account-less, this is enforced per-device: blocked author ids and hidden
+// content ids are stored in localStorage and filtered out of every render.
+const BLOCKED_AUTHORS_KEY = "blockedAuthors";
+const HIDDEN_CONTENT_KEY = "hiddenContent";
+
+function loadBlockedAuthors() {
+  try { return JSON.parse(localStorage.getItem(BLOCKED_AUTHORS_KEY) || "{}") || {}; }
+  catch { return {}; }
+}
+function saveBlockedAuthors(map) {
+  try { localStorage.setItem(BLOCKED_AUTHORS_KEY, JSON.stringify(map)); } catch {}
+}
+function isAuthorBlocked(id) {
+  if (!id) return false;
+  return Object.prototype.hasOwnProperty.call(loadBlockedAuthors(), id);
+}
+function blockAuthor(id, label) {
+  if (!id || id === myToken) return false; // never block yourself
+  const map = loadBlockedAuthors();
+  map[id] = { label: String(label || "Community member").slice(0, 80), ts: Date.now() };
+  saveBlockedAuthors(map);
+  return true;
+}
+function unblockAuthor(id) {
+  const map = loadBlockedAuthors();
+  if (map[id]) { delete map[id]; saveBlockedAuthors(map); }
+}
+
+function loadHiddenContent() {
+  try { return JSON.parse(localStorage.getItem(HIDDEN_CONTENT_KEY) || "[]") || []; }
+  catch { return []; }
+}
+function saveHiddenContent(arr) {
+  try { localStorage.setItem(HIDDEN_CONTENT_KEY, JSON.stringify(arr)); } catch {}
+}
+function _contentKey(type, id) { return `${type}:${id}`; }
+function isContentHidden(type, id) {
+  if (!id) return false;
+  return loadHiddenContent().includes(_contentKey(type, id));
+}
+function hideContent(type, id) {
+  if (!id) return;
+  const arr = loadHiddenContent();
+  const key = _contentKey(type, id);
+  if (!arr.includes(key)) { arr.push(key); saveHiddenContent(arr); }
+}
+function clearHiddenContent() { saveHiddenContent([]); }
+
+// Re-draw every surface that can show blocked/hidden content. Called after a
+// block/hide/unblock so the change is reflected immediately.
+function refreshAfterModeration() {
+  try { if (typeof renderChatMessages === "function") renderChatMessages(); } catch (_) {}
+  try { if (typeof renderStreetNotes === "function") renderStreetNotes(); } catch (_) {}
+  try { if (typeof renderMapMarkers === "function") renderMapMarkers(); } catch (_) {}
+  try { if (typeof renderPeerMarkers === "function") renderPeerMarkers(); } catch (_) {}
+  try { if (typeof renderList === "function") renderList(); } catch (_) {}
+}
+
+// Lightweight "Blocked & hidden" manager so users can review and undo blocks /
+// un-hide content (required for a reversible moderation flow). Built on demand.
+function openBlockedManager() {
+  let modal = document.getElementById("blocked-manager-modal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "blocked-manager-modal";
+    modal.className = "modal-overlay";
+    modal.setAttribute("aria-hidden", "true");
+    document.body.appendChild(modal);
+    modal.addEventListener("click", (e) => { if (e.target === modal) closeBlockedManager(); });
+  }
+
+  const blocked = loadBlockedAuthors();
+  const ids = Object.keys(blocked);
+  const hiddenCount = loadHiddenContent().length;
+
+  const blockedRows = ids.length
+    ? ids.map((id) => {
+        const label = blocked[id].label || "Community member";
+        return `
+        <div class="bm-row">
+          <span class="bm-avatar">${escapeHtml(firstEmojiOf(label) || "🙂")}</span>
+          <span class="bm-row-label">${escapeHtml(label)}</span>
+          <button type="button" class="bm-unblock" data-id="${escapeHtml(id)}">Unblock</button>
+        </div>`;
+      }).join("")
+    : `<div class="bm-empty">You haven't blocked anyone.</div>`;
+
+  const shieldSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2l7 2.6v5.1c0 4.4-3 7.6-7 9.1-4-1.5-7-4.7-7-9.1V5.8z"/><path d="M9.2 12.2l1.9 1.9 3.7-3.9"/></svg>';
+
+  modal.innerHTML = `
+    <div class="bm-card">
+      <div class="bm-titlebar">
+        <h2>Blocked &amp; hidden</h2>
+        <button type="button" id="bm-close" class="bm-close" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="bm-note">
+        <span class="bm-note-icon">${shieldSvg}</span>
+        <span>Blocking is saved on this device. Blocked people aren't told they were blocked.</span>
+      </div>
+
+      <div class="bm-section-label">Blocked users</div>
+      <div class="bm-group">${blockedRows}</div>
+
+      <div class="bm-section-label">Hidden posts</div>
+      <div class="bm-group">
+        <div class="bm-row">
+          <span class="bm-row-label">${hiddenCount} hidden post${hiddenCount === 1 ? "" : "s"}</span>
+          <button type="button" id="bm-clear-hidden" class="bm-text-action" ${hiddenCount ? "" : "disabled"}>Show again</button>
+        </div>
+      </div>
+    </div>`;
+
+  const closeEl = modal.querySelector("#bm-close");
+  if (closeEl) closeEl.addEventListener("click", closeBlockedManager);
+  modal.querySelectorAll(".bm-unblock").forEach((b) => {
+    b.addEventListener("click", () => {
+      unblockAuthor(b.dataset.id);
+      refreshAfterModeration();
+      openBlockedManager(); // re-render the (now shorter) list in place
+    });
+  });
+  const clearBtn = modal.querySelector("#bm-clear-hidden");
+  if (clearBtn && hiddenCount) {
+    clearBtn.addEventListener("click", () => {
+      clearHiddenContent();
+      refreshAfterModeration();
+      openBlockedManager();
+    });
+  }
+
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+}
+
+function closeBlockedManager() {
+  const modal = document.getElementById("blocked-manager-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.setAttribute("aria-hidden", "true");
+  }
+}
+
 async function fetchChatMessages() {
   try {
     const response = await fetch(`${API_BASE}/chat/messages`);
@@ -4629,8 +4916,21 @@ function renderChatMessages() {
     return;
   }
 
+  // Hide messages from blocked users or content the viewer chose to hide.
+  const visibleMessages = chatMessages.filter(
+    (m) => !isAuthorBlocked(m.author_token) && !isContentHidden("chat_message", m.id)
+  );
+
+  if (visibleMessages.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "chat-loading";
+    empty.textContent = "No messages yet. Be the first to say something!";
+    container.appendChild(empty);
+    return;
+  }
+
   // Pinned messages surface at the top in their own banner (admin-decided).
-  const pinned = chatMessages.filter((m) => m.pinned);
+  const pinned = visibleMessages.filter((m) => m.pinned);
   if (pinned.length) {
     const pinnedWrap = document.createElement("div");
     pinnedWrap.className = "chat-pinned";
@@ -4642,7 +4942,7 @@ function renderChatMessages() {
     container.appendChild(pinnedWrap);
   }
 
-  chatMessages.forEach((msg) => {
+  visibleMessages.forEach((msg) => {
     if (msg.pinned) return;
     container.appendChild(buildChatBubble(msg, false));
   });
@@ -4669,57 +4969,99 @@ function buildAnnouncementBubble() {
   return messageDiv;
 }
 
+// Pull a leading emoji off an author label (e.g. "🐶 doggo" → "🐶") for the
+// Messages-style avatar; falls back to a neutral glyph.
+function firstEmojiOf(str) {
+  if (!str) return "";
+  try {
+    const m = String(str).match(/^\s*(\p{Extended_Pictographic})/u);
+    return m ? m[1] : "";
+  } catch (_) {
+    return "";
+  }
+}
+
 function buildChatBubble(msg, inPinnedSection) {
+  const isOwn = !!msg.author_token && msg.author_token === myToken;
+
+  // Row wrapper handles left/right alignment (others left, you right).
+  const row = document.createElement("div");
+  row.className = "chat-row" + (isOwn ? " own" : "");
+
+  // Avatar only for other people's messages (Messages convention).
+  if (!isOwn) {
+    const av = document.createElement("div");
+    av.className = "chat-avatar";
+    av.textContent = firstEmojiOf(msg.author) || "🙂";
+    row.appendChild(av);
+  }
+
   const messageDiv = document.createElement("div");
-  messageDiv.className = "chat-message";
+  messageDiv.className = "chat-message" + (isOwn ? " own-message" : "");
   if (msg.pinned && !inPinnedSection) messageDiv.classList.add("is-pinned");
 
-  const authorDiv = document.createElement("div");
-  authorDiv.className = "chat-message-author";
-  authorDiv.textContent = msg.author || "Anonymous";
+  if (!isOwn) {
+    const authorDiv = document.createElement("div");
+    authorDiv.className = "chat-message-author";
+    authorDiv.textContent = msg.author || "Anonymous";
+    messageDiv.appendChild(authorDiv);
+  }
 
   const textDiv = document.createElement("div");
   textDiv.className = "chat-message-text";
   textDiv.textContent = msg.message;
+  messageDiv.appendChild(textDiv);
 
   const timeDiv = document.createElement("div");
   timeDiv.className = "chat-message-time";
   const msgTime = typeof msg.timestamp === "string" ? new Date(msg.timestamp) : msg.timestamp;
   timeDiv.textContent = formatChatTime(msgTime);
-
-  messageDiv.appendChild(authorDiv);
-  messageDiv.appendChild(textDiv);
   messageDiv.appendChild(timeDiv);
 
-  // Admins can pin/unpin any message
-  if (isAdminLoggedIn) {
-    const pinBtn = document.createElement("button");
-    pinBtn.type = "button";
-    pinBtn.className = "chat-pin-btn";
-    pinBtn.textContent = msg.pinned ? "📌 Unpin" : "📌 Pin";
-    pinBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      togglePinMessage(msg);
-    });
-    messageDiv.appendChild(pinBtn);
-  }
+  row.appendChild(messageDiv);
 
-  // Anyone can flag a message for moderator review.
+  // Progressive disclosure: report / block / (admin) pin all sit behind one ⋯.
+  const actions = [];
   if (msg.id) {
-    const reportBtn = document.createElement("button");
-    reportBtn.type = "button";
-    reportBtn.className = "chat-report-btn";
-    reportBtn.title = "Report message";
-    reportBtn.textContent = "⚑";
-    reportBtn.style.cssText = "background:none;border:none;color:var(--ui-muted,#999);font-size:0.72rem;cursor:pointer;opacity:0.6;padding:0;margin-left:0.4rem;";
-    reportBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openFlagModal("chat_message", msg.id);
+    actions.push({
+      label: "Report message",
+      icon: SHEET_ICONS.report,
+      handler: () => openFlagModal("chat_message", msg.id),
     });
-    messageDiv.appendChild(reportBtn);
+  }
+  if (msg.author_token && !isOwn) {
+    actions.push({
+      label: "Block author",
+      icon: SHEET_ICONS.block,
+      handler: () => {
+        blockAuthor(msg.author_token, msg.author);
+        refreshAfterModeration();
+        showToast("User blocked");
+      },
+    });
+  }
+  if (isAdminLoggedIn) {
+    actions.push({
+      label: msg.pinned ? "Unpin message" : "Pin message",
+      icon: SHEET_ICONS.pin,
+      handler: () => togglePinMessage(msg),
+    });
   }
 
-  return messageDiv;
+  if (actions.length) {
+    const moreBtn = document.createElement("button");
+    moreBtn.type = "button";
+    moreBtn.className = "chat-bubble-more";
+    moreBtn.setAttribute("aria-label", "Message options");
+    moreBtn.innerHTML = MORE_DOTS_SVG;
+    moreBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openActionMenu({ actions });
+    });
+    row.appendChild(moreBtn);
+  }
+
+  return row;
 }
 
 async function togglePinMessage(msg) {
@@ -4758,7 +5100,7 @@ async function sendChatMessage() {
   if (!message) return;
 
   sendButton.disabled = true;
-  sendButton.textContent = "Sending...";
+  sendButton.classList.add("is-sending");
 
   try {
     const response = await fetch(`${API_BASE}/chat/messages`, {
@@ -4769,6 +5111,7 @@ async function sendChatMessage() {
         author: avatar.title && avatar.emoji !== "🚫"
           ? `${avatar.emoji} ${avatar.title}`
           : "Anonymous",
+        author_id: getChatUserId(),
       }),
     });
 
@@ -4785,7 +5128,7 @@ async function sendChatMessage() {
     alert("Failed to send message. Please try again.");
   } finally {
     sendButton.disabled = false;
-    sendButton.textContent = "Send";
+    sendButton.classList.remove("is-sending");
   }
 }
 
@@ -4799,6 +5142,10 @@ function openChatModal() {
 
   chatModal.classList.remove("hidden");
   chatModal.setAttribute("aria-hidden", "false");
+
+  // Wire the "Blocked" manager entry point (idempotent via onclick assignment).
+  const blockedLink = document.getElementById("chat-blocked-link");
+  if (blockedLink) blockedLink.onclick = openBlockedManager;
 
   // Show admin scrolling announcement at top of chat
   displayLiveUpdates();
@@ -6265,6 +6612,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   initPeerBroadcasting();
 
   await waitForBackend();
+  // Learn our own public token so we can recognise our own content/marker
+  // (raw ids are no longer exposed by the API).
+  await ensureMyToken();
   // Ensure tiles are visible regardless of whether the cold-start overlay was
   // shown. On mobile the map container can have a stale size after the overlay
   // or after any async layout shift during startup.

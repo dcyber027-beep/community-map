@@ -12,3 +12,11 @@
 
 /manifest.json
   Content-Type: application/manifest+json
+
+# Digital Asset Links for the Android TWA. Must be reachable at exactly
+# /.well-known/assetlinks.json and served as JSON, or TWA verification fails
+# (the app would launch with a browser address bar instead of fullscreen).
+/.well-known/assetlinks.json
+  Content-Type: application/json
+  Cache-Control: public, max-age=3600
+  Access-Control-Allow-Origin: *
