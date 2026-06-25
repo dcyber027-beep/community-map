@@ -44,7 +44,7 @@ Run these only after deciding to pursue App Store packaging:
 ```powershell
 npm init -y
 npm install @capacitor/core @capacitor/cli
-npx cap init "Melbourne Community Map" "com.melbournecommunitymap.app" --web-dir frontend
+npx cap init "Melbourne Community Map" "au.communitymap.app" --web-dir frontend
 npm install @capacitor/ios
 npx cap add ios
 npx cap sync ios

@@ -1,6 +1,6 @@
 {
-  "packageId": "com.melbournecommunitymap.app",
-  "host": "YOUR_NETLIFY_DOMAIN",
+  "packageId": "au.communitymap.app",
+  "host": "commap.netlify.app",
   "name": "Melbourne Community Map",
   "launcherName": "Community Map",
   "display": "standalone",
@@ -11,9 +11,8 @@
   "backgroundColor": "#ffffff",
   "enableNotifications": false,
   "startUrl": "/",
-  "iconUrl": "https://YOUR_NETLIFY_DOMAIN/icons/icon-512x512.png",
-  "maskableIconUrl": "https://YOUR_NETLIFY_DOMAIN/icons/icon-512x512.png",
-  "monochromeIconUrl": "https://YOUR_NETLIFY_DOMAIN/icons/icon-512x512.png",
+  "iconUrl": "https://commap.netlify.app/icons/icon-512x512.png",
+  "maskableIconUrl": "https://commap.netlify.app/icons/icon-maskable-512x512.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "./android.keystore",
@@ -22,7 +21,7 @@
   "appVersionName": "1.0.0",
   "appVersionCode": 1,
   "shortcuts": [],
-  "webManifestUrl": "https://YOUR_NETLIFY_DOMAIN/manifest.json",
-  "generatorApp": "bubblewrap-cli",
-  "fallbackType": "customtabs"
+  "webManifestUrl": "https://commap.netlify.app/manifest.json",
+  "fallbackType": "customtabs",
+  "generatorApp": "bubblewrap-cli"
 }

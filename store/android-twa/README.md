@@ -4,10 +4,10 @@ This folder contains the Android publishing configuration for packaging the PWA 
 
 ## Prerequisites
 
-- A live HTTPS frontend URL, for example the production Netlify domain.
-- Node.js, Java JDK, and Android Studio or Android command line tools.
+- A live HTTPS frontend URL: the production Netlify domain `https://commap.netlify.app`.
+- Node.js, Java JDK 17, and Android Studio or Android command line tools.
 - A Google Play Developer account.
-- A final Android package name. The examples use `com.melbournecommunitymap.app`.
+- Final Android package name: `au.communitymap.app`.
 
 ## Generate The Android Project
 
@@ -20,10 +20,10 @@ This folder contains the Android publishing configuration for packaging the PWA 
 2. Initialize from the live manifest:
 
    ```powershell
-   bubblewrap init --manifest https://YOUR_NETLIFY_DOMAIN/manifest.json
+   bubblewrap init --manifest https://commap.netlify.app/manifest.json
    ```
 
-3. Use the values from `twa-manifest.example.json` when Bubblewrap prompts for app metadata. Replace `YOUR_NETLIFY_DOMAIN` with the production frontend host.
+3. Use the values from `twa-manifest.example.json` when Bubblewrap prompts for app metadata (package `au.communitymap.app`, maskable icon `icon-maskable-512x512.png`).
 
 4. Build the Play bundle:
 
@@ -37,13 +37,12 @@ This folder contains the Android publishing configuration for packaging the PWA 
 
 Google Play Trusted Web Activity requires the website and Android app to prove they belong to the same owner.
 
-1. After Google Play App Signing is configured, copy the app signing certificate SHA-256 fingerprint from Play Console.
-2. Copy `assetlinks.example.json` to `frontend/.well-known/assetlinks.json`.
-3. Replace the fingerprint placeholder and package name if needed.
-4. Deploy the frontend and verify this URL returns JSON:
+1. After Google Play App Signing is configured, copy BOTH SHA-256 fingerprints from Play Console: the Play app-signing key and your upload key.
+2. Paste both into the existing `frontend/.well-known/assetlinks.json` (it already has the `au.communitymap.app` package and two placeholder slots).
+3. Deploy the frontend and verify this URL returns JSON with the real fingerprints:
 
    ```text
-   https://YOUR_NETLIFY_DOMAIN/.well-known/assetlinks.json
+   https://commap.netlify.app/.well-known/assetlinks.json
    ```
 
 Do not deploy the example file as-is. A placeholder fingerprint will fail verification.
