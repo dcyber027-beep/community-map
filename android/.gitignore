@@ -1,0 +1,27 @@
+# Bubblewrap / Gradle build outputs and local-only files.
+# The committed source of truth is twa-manifest.json; everything Bubblewrap
+# generates from it (the Gradle project + signed bundles) is reproducible and
+# should NOT be committed.
+
+# Signing keys & secrets — NEVER commit (also covered by the root .gitignore).
+*.jks
+*.keystore
+android.keystore
+keystore.properties
+
+# Built app bundles / APKs
+*.aab
+*.apk
+*.idsig
+
+# Gradle / Android build artifacts
+.gradle/
+build/
+app/build/
+*/build/
+local.properties
+captures/
+.cxx/
+
+# Bubblewrap bookkeeping
+twa-manifest.json.bak
